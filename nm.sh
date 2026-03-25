@@ -149,7 +149,7 @@ uninstall_mtp() {
 if [ ! -f "/usr/local/bin/nm" ]; then
     # 因为用 curl 管道流执行时无法获取文件本身，所以从你的 GitHub 重新拉取一次保存
     # 注意：下面这行链接，你需要换成你自己仓库 nm.sh 的真实 Raw 链接！
-    curl -fsSL "https://raw.githubusercontent.com/lijboys/NAT-MTP/main/nm.sh" -o /usr/local/bin/nm
+    curl -fsSL "https://raw.githubusercontent.com/lijboys/NAT-MTP/refs/heads/main/nm.sh" -o /usr/local/bin/nm
     chmod +x /usr/local/bin/nm
 fi
 
