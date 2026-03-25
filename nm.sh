@@ -10,8 +10,7 @@ RESET="\033[0m"
 CONFIG_FILE="/etc/mtg.toml"
 INFO_FILE="/etc/mtg_info.txt"
 
-# 你的 GitHub 脚本 Raw 链接 (🚨记得替换成你自己的！)
-# 例如: https://raw.githubusercontent.com/lijboys/NAT-MTP/main/nm.sh
+# 🚨 请务必把这里替换成你 GitHub 仓库真实的 Raw 链接！
 SCRIPT_URL="https://raw.githubusercontent.com/lijboys/NAT-MTP/main/nm.sh"
 
 # 权限自检
@@ -27,6 +26,46 @@ get_status() {
     else
         if pgrep -f "mtg run" > /dev/null; then echo -e "${GREEN}运行中 (nohup)${RESET}"; else echo -e "${RED}已停止${RESET}"; fi
     fi
+}
+
+# 伪装域名选择菜单
+choose_domain() {
+    echo ""
+    echo -e "${CYAN}--- 请选择 FakeTLS 伪装域名 ---${RESET}"
+    echo -e "  ${GREEN}1.${RESET} itunes.apple.com   (推荐！苹果App Store，日常流量极大，隐蔽性极高)"
+    echo -e "  ${GREEN}2.${RESET} www.cloudflare.com (推荐！全球最大CDN，属于'藏木于林'的极佳选择)"
+    echo -e "  ${GREEN}3.${RESET} gateway.icloud.com (苹果iCloud同步接口，24小时后台走流量，极其自然)"
+    echo -e "  ${YELLOW}4.${RESET} 自定义伪装域名"
+    read -p "请输入序号选择 (回车默认选 1): " domain_choice
+    
+    case $domain_choice in
+        2) FAKE_DOMAIN="www.cloudflare.com" ;;
+        3) FAKE_DOMAIN="gateway.icloud.com" ;;
+        4) 
+            read -p "👉 请输入自定义【FakeTLS 伪装域名】: " FAKE_DOMAIN
+            FAKE_DOMAIN=${FAKE_DOMAIN:-itunes.apple.com}
+            ;;
+        *) FAKE_DOMAIN="itunes.apple.com" ;;
+    esac
+    echo -e "✅ 已选择伪装域名: ${GREEN}${FAKE_DOMAIN}${RESET}"
+}
+
+# 底层生成密钥 (彻底抛弃 mtg 命令行，绝不报错)
+generate_secret() {
+    local domain=$1
+    local domain_hex=""
+    
+    # 尝试多种内置转换工具，兼容极简版系统
+    if command -v xxd >/dev/null 2>&1; then
+        domain_hex=$(echo -n "$domain" | xxd -p | tr -d '\n')
+    elif command -v hexdump >/dev/null 2>&1; then
+        domain_hex=$(echo -n "$domain" | hexdump -v -e '/1 "%02x"')
+    else
+        domain_hex=$(echo -n "$domain" | od -A n -t x1 | tr -d ' \n')
+    fi
+    
+    local rand_hex=$(cat /dev/urandom | tr -dc 'a-f0-9' | head -c 32)
+    SECRET="ee${rand_hex}${domain_hex}"
 }
 
 # 1. 安装功能
@@ -53,11 +92,10 @@ install_mtp() {
     read -p "👉 2. 请输入商家的【公网 IPv4 地址】 (回车默认 $AUTO_IP): " PUBLIC_IP
     PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
     read -p "👉 3. 请输入面板分配的【公网端口】: " OUT_PORT
-    read -p "👉 4. 请输入【FakeTLS 伪装域名】 (回车默认 bing.com): " FAKE_DOMAIN
-    FAKE_DOMAIN=${FAKE_DOMAIN:-bing.com}
     
-    echo -e "${YELLOW}正在生成专属伪装密钥...${RESET}"
-    SECRET=$(/usr/local/bin/mtg generate-secret tls ${FAKE_DOMAIN})
+    choose_domain
+    echo -e "${YELLOW}正在通过底层算法生成专属密钥...${RESET}"
+    generate_secret "$FAKE_DOMAIN"
     
     cat > $CONFIG_FILE <<EOT
 secret = "${SECRET}"
@@ -133,11 +171,19 @@ modify_config() {
     NEW_IP=${NEW_IP:-$PUBLIC_IP}
     read -p "输入新的【公网端口】 (回车保持 ${OUT_PORT}): " NEW_OUT
     NEW_OUT=${NEW_OUT:-$OUT_PORT}
-    read -p "输入新的【伪装域名】 (回车保持 ${FAKE_DOMAIN}): " NEW_DOMAIN
-    NEW_DOMAIN=${NEW_DOMAIN:-$FAKE_DOMAIN}
+    
+    echo ""
+    echo -e "当前伪装域名为: ${GREEN}${FAKE_DOMAIN}${RESET}"
+    read -p "按 1 重新选择伪装域名，按回车键保持不变: " change_domain
+    if [ "$change_domain" == "1" ]; then
+        choose_domain
+        NEW_DOMAIN=$FAKE_DOMAIN
+    else
+        NEW_DOMAIN=$FAKE_DOMAIN
+    fi
 
-    # 如果换了伪装域名，就重新生成密钥
-    NEW_SECRET=$(/usr/local/bin/mtg generate-secret tls ${NEW_DOMAIN})
+    generate_secret "$NEW_DOMAIN"
+    NEW_SECRET=$SECRET
 
     cat > $CONFIG_FILE <<EOT
 secret = "${NEW_SECRET}"
@@ -163,7 +209,7 @@ EOT
     read -p "按回车键返回主菜单..."
 }
 
-# 6. 卸载功能 (已修复退出逻辑)
+# 6. 卸载功能
 uninstall_mtp() {
     clear
     echo -e "${RED}正在卸载 MTProxy...${RESET}"
@@ -208,7 +254,7 @@ while true; do
     echo -e "当前状态: $(get_status)"
     echo -e "快捷指令: ${GREEN}nm${RESET}"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${GREEN}1.${RESET} 安装 / 重装 MTP (自定义伪装域名)"
+    echo -e "  ${GREEN}1.${RESET} 安装 / 重装 MTP (内置精选伪装域名)"
     echo -e "  ${GREEN}2.${RESET} 查看当前 TG 链接与信息"
     echo -e "  ${GREEN}3.${RESET} 修改端口、IP与伪装域名"
     echo -e "  ${YELLOW}4.${RESET} 启动 MTP 服务"
