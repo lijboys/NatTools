@@ -10,7 +10,7 @@ CONFIG_FILE="/etc/mtg.toml"
 INFO_FILE="/etc/mtg_info.txt"
 
 # 你的真实 GitHub Raw 链接
-SCRIPT_URL="https://raw.githubusercontent.com/lijboys/NAT-MTP/refs/heads/main/nm.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/lijboys/NatTools/refs/heads/main/mtp.sh"
 
 if [ "$EUID" -ne 0 ]; then echo -e "${RED}请使用 root 用户运行！${RESET}"; exit 1; fi
 
@@ -189,7 +189,7 @@ uninstall_mtp() {
     else
         pkill -f "mtg run"; crontab -l 2>/dev/null | grep -v "mtg run" | crontab -
     fi
-    rm -f /usr/local/bin/mtg $CONFIG_FILE $INFO_FILE /usr/local/bin/nm
+    rm -f /usr/local/bin/mtg $CONFIG_FILE $INFO_FILE /usr/local/bin/mtp
     echo -e "${GREEN}✅ 卸载干净啦！面板即将自动关闭...${RESET}"
     sleep 2; exit 0
 }
@@ -197,15 +197,15 @@ uninstall_mtp() {
 update_script() {
     clear
     echo -e "${YELLOW}正在从 GitHub 拉取最新面板代码...${RESET}"
-    curl -fsSL "${SCRIPT_URL}" -o /usr/local/bin/nm
-    chmod +x /usr/local/bin/nm
-    echo -e "${GREEN}✅ 面板更新完成！请重新输入 nm 启动最新版。${RESET}"
+    curl -fsSL "${SCRIPT_URL}" -o /usr/local/bin/mtp
+    chmod +x /usr/local/bin/mtp
+    echo -e "${GREEN}✅ 面板更新完成！请重新输入 mtp 启动最新版。${RESET}"
     sleep 2; exit 0
 }
 
-if [ ! -f "/usr/local/bin/nm" ]; then
-    curl -fsSL "${SCRIPT_URL}" -o /usr/local/bin/nm
-    chmod +x /usr/local/bin/nm
+if [ ! -f "/usr/local/bin/mtp" ]; then
+    curl -fsSL "${SCRIPT_URL}" -o /usr/local/bin/mtp
+    chmod +x /usr/local/bin/mtp
 fi
 
 while true; do
@@ -214,7 +214,7 @@ while true; do
     echo -e "     🦇 NAT 专属 mtg v2 管理面板 🦇"
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "当前状态: $(get_status)"
-    echo -e "快捷指令: ${GREEN}nm${RESET}"
+    echo -e "快捷指令: ${GREEN}mtp${RESET}"
     echo -e "${CYAN}-----------------------------------------${RESET}"
     echo -e "  ${GREEN}1.${RESET} 安装 / 重装 MTP (支持无脑回车随机生成)"
     echo -e "  ${GREEN}2.${RESET} 查看当前 TG 链接与信息"
