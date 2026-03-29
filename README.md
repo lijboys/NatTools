@@ -1,4 +1,12 @@
-# 🦇 NAT-MTP：专为 NAT 小鸡打造的 MTProxy 一键面板
+# NAT小鸡工具箱
+
+<div align="center">
+  
+[NAT-MTP](https://raw.githubusercontent.com/lijboys/NatTools/refs/heads/main/mtp.sh)  | 仓库2（地址）
+
+</div>
+
+## 🦇 NatTools：专为 NAT 小鸡打造的 MTProxy 一键面板
 
 本脚本专为海外廉价 NAT 小鸡（尤其是精简版 Alpine/LXC 容器）量身定制，完美解决无 `systemd` 报错、端口被占误报、动态伪装域名生成等痛点。支持一键部署基于原生 `mtg v2` 核心的 FakeTLS 伪装代理。
 
@@ -23,7 +31,7 @@ bash <(curl -Ls is.gd/你的自定义后缀)
 直接将脚本下载为系统全局命令并赋予权限，随后瞬间唤醒面板（适合未安装 curl 的极简系统）：
 
 ```bash
-wget -O /usr/local/bin/nm https://raw.githubusercontent.com/lijboys/NAT-MTP/refs/heads/main/nm.sh && chmod +x /usr/local/bin/nm && nm
+wget -O /usr/local/bin/mtp https://raw.githubusercontent.com/lijboys/NatTools/refs/heads/main/mtp.sh && chmod +x /usr/local/bin/mtp && mtp
 ```
 
 ### 方案 D：经典拉取执行
@@ -31,7 +39,7 @@ wget -O /usr/local/bin/nm https://raw.githubusercontent.com/lijboys/NAT-MTP/refs
 传统的 GitHub Raw 裸脚本部署方法：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/lijboys/NAT-MTP/refs/heads/main/nm.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/lijboys/NatTools/refs/heads/main/mtp.sh)
 ```
 
 -----
@@ -41,7 +49,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/lijboys/NAT-MTP/refs/heads/m
 首次安装完成后，无论何时登录你的小鸡，只需要在 SSH 敲入以下两个字母并回车，即可瞬间唤醒管理面板：
 
 ```bash
-nm
+mtp
 ```
 
 **面板核心功能：**
@@ -65,7 +73,7 @@ nm
 
 1.  浏览器打开免费短链网站：**[is.gd](https://www.google.com/search?q=https://is.gd/)**
 2.  将本仓库真实的脚本直链粘贴进输入框：
-    `https://raw.githubusercontent.com/lijboys/NAT-MTP-Script/main/nm.sh`
+    `https://raw.githubusercontent.com/lijboys/NatTools-Script/main/mtp.sh`
 3.  点击下方的 **"Further options/custom URL"**（展开高级选项）。
 4.  在 **"Custom URL"** 框内，填入一个你好记的专属英文名字，例如 `lijboys_mtp` 或 `natmtp`。
 5.  点击 **Shorten\!** 按钮。
