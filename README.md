@@ -18,7 +18,7 @@
 ### 方案 A：Cloudflare 自定义域名 (推荐)
 如果你有自己的域名，利用 CF 网页版搭建专属的极简短链（告别 GitHub 墙的烦恼，极速秒连！）：
 ```bash
-bash <(curl -fsSL n.你的域名.com)
+bash <(curl -fsSL vvvps.qzz.io)
 ```
 
 ### 方案 B：免费短链白嫖（免域名、极简极短）
