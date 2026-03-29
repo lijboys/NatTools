@@ -4,7 +4,7 @@
 
 ## 🚀 一键极速部署指令（四选一）
 
-### 方案 A：Cloudflare 自定义域名（最极客，如 eooce 般极简）
+### 方案 A：Cloudflare 自定义域名
 如果你在 cf 网页版配置了 Worker 代理拉取，直接在小鸡执行：
 ```bash
 bash <(curl -fsSL mtp.你的域名.com)
