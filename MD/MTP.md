@@ -1,4 +1,4 @@
-# 🦇 NatTools - MTP 代理部署教程
+# 🦇 SSHTools - MTP 代理部署教程
 
 [⬅️ 返回 NooMili 工具箱主页](../README.md)
 
@@ -18,7 +18,7 @@
 
 *(如果你只想单独安装 MTP 面板，不想要主控，可以直接运行：)*
 ```bash
-wget -O /usr/local/bin/mtp [https://raw.githubusercontent.com/lijboys/NatTools/main/mtp.sh](https://raw.githubusercontent.com/lijboys/NatTools/main/mtp.sh) && chmod +x /usr/local/bin/mtp && mtp
+wget -O /usr/local/bin/mtp [https://raw.githubusercontent.com/lijboys/SSHTools/main/mtp.sh](https://raw.githubusercontent.com/lijboys/SSHTools/main/mtp.sh) && chmod +x /usr/local/bin/mtp && mtp
 ```
 
 ## 🛠️ 核心功能亮点
