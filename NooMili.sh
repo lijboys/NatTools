@@ -7,15 +7,12 @@ CYAN="\033[36m"
 BLUE="\033[34m"
 RESET="\033[0m"
 
-# 你的 GitHub Raw 链接
-NAT_URL="https://raw.githubusercontent.com/lijboys/NatTools/main/NooMili.sh"
-MTP_URL="https://raw.githubusercontent.com/lijboys/NatTools/main/mtp.sh"
-KOMARI_URL="https://raw.githubusercontent.com/lijboys/NatTools/main/komari.sh"
+# 你的 GitHub Raw 链接 (已全面更新为 SSHTools 仓库)
+NAT_URL="https://raw.githubusercontent.com/lijboys/SSHTools/main/SSHTools.sh"
+MTP_URL="https://raw.githubusercontent.com/lijboys/SSHTools/main/mtp.sh"
+KOMARI_URL="https://raw.githubusercontent.com/lijboys/SSHTools/main/komari.sh"
 
 if [ "$EUID" -ne 0 ]; then echo -e "${RED}请使用 root 用户运行！${RESET}"; exit 1; fi
-
-# 清理旧的 nat 快捷键 (兼容旧版本)
-if [ -f "/usr/local/bin/nat" ]; then rm -f /usr/local/bin/nat; fi
 
 # 安装主控快捷键 n
 if [ ! -f "/usr/local/bin/n" ]; then
@@ -65,7 +62,6 @@ sys_clean() {
     elif [ -x "$(command -v yum)" ]; then
         yum autoremove -y && yum clean all
     fi
-    # 清理旧的系统日志 (保留最近1天)
     if command -v journalctl >/dev/null 2>&1; then
         journalctl --vacuum-time=1d >/dev/null 2>&1
     fi
@@ -93,20 +89,41 @@ launch_komari() {
     /usr/local/bin/komari
 }
 
+launch_lucky() {
+    clear
+    echo -e "${CYAN}=========================================${RESET}"
+    echo -e "       🛡️ Lucky (Web 版 SSL/反代管理)部署"
+    echo -e "${CYAN}=========================================${RESET}"
+    echo -e "说明：Lucky 是一款极低内存占用的 Web 面板工具。"
+    echo -e "支持全自动申请 Let's Encrypt 等 SSL 证书，并自带反向代理功能。"
+    echo -e "非常适合 NAT 小鸡使用！"
+    echo -e "${CYAN}-----------------------------------------${RESET}"
+    read -p "确认安装 Lucky 面板吗？[Y/n]: " install_choice
+    if [[ "$install_choice" == "Y" || "$install_choice" == "y" || "$install_choice" == "" ]]; then
+        echo -e "${YELLOW}正在调用 Lucky 官方一键安装脚本...${RESET}"
+        # 调用大吉官方的一键脚本
+        curl -fsSL https://gitee.com/gdy666/lucky/raw/main/install.sh | bash
+        echo -e "${GREEN}✅ Lucky 部署完毕！请根据上方官方提示的端口和默认密码登录 Web 页面。${RESET}"
+    else
+        echo -e "${YELLOW}已取消安装。${RESET}"
+    fi
+    read -p "按回车键返回主菜单..."
+}
+
 update_nat() {
     clear
     echo -e "${YELLOW}正在从 GitHub 拉取最新主控代码...${RESET}"
     curl -fsSL "${NAT_URL}" -o /usr/local/bin/n
     chmod +x /usr/local/bin/n
     echo -e "${GREEN}✅ 主控面板更新完成！即将重启面板...${RESET}"
-    sleep 2; /usr/local/bin/n
+    sleep 2; exec /usr/local/bin/n
 }
 
 uninstall_nat() {
     clear
     echo -e "${CYAN}--- 卸载选项 ---${RESET}"
     echo -e "  ${RED}1.${RESET} 彻底卸载全部 (主控 + MTP + Komari)"
-    echo -e "  ${YELLOW}2.${RESET} 仅卸载主控面板 (保留 MTP 和 Komari 独立运行)"
+    echo -e "  ${YELLOW}2.${RESET} 仅卸载主控面板 (保留子模块独立运行)"
     echo -e "  ${GREEN}0.${RESET} 取消并返回"
     read -p "请输入选择: " un_choice
     case $un_choice in
@@ -122,13 +139,15 @@ uninstall_nat() {
                 pkill -f "komari" 2>/dev/null
                 rm -rf /opt/komari /usr/local/bin/komari 
             fi
+            # 提示手动卸载 Lucky
+            echo -e "${YELLOW}提示: 如果你安装了 Lucky，请在终端输入 lucky_uninstall 进行彻底卸载。${RESET}"
             rm -f /usr/local/bin/n
-            echo -e "${GREEN}✅ 所有工具已彻底卸载！再见！${RESET}"
+            echo -e "${GREEN}✅ 基础工具已卸载！再见！${RESET}"
             exit 0
             ;;
         2)
             rm -f /usr/local/bin/n
-            echo -e "${GREEN}✅ 主控面板已卸载！(MTP 和 Komari 仍可通过各自的快捷键启动)${RESET}"
+            echo -e "${GREEN}✅ 主控面板已卸载！${RESET}"
             exit 0
             ;;
         *) return ;;
@@ -145,7 +164,7 @@ while true; do
     echo -e "${CYAN}| |\  | (_) | (_) | |  | | | | | ${RESET}"
     echo -e "${CYAN}\_| \_/\___/ \___/\_|  |_/_|_|_| ${RESET}"
     echo -e "${CYAN}=========================================${RESET}"
-    echo -e " NooMili工具箱 ${GREEN}v2.1.0${RESET}"
+    echo -e " SSHTools工具箱 ${GREEN}v2.2.0${RESET}"
     echo -e " 命令行输入 ${YELLOW}n${RESET} 可快速启动脚本"
     echo -e "${CYAN}-----------------------------------------${RESET}"
     echo -e "  ${GREEN}1.${RESET} 系统信息查询"
@@ -154,12 +173,13 @@ while true; do
     echo -e "${CYAN}-----------------------------------------${RESET}"
     echo -e "  ${GREEN}4.${RESET} 进入 MTP 代理管理面板"
     echo -e "  ${GREEN}5.${RESET} 进入 Komari 探针管理面板"
+    echo -e "  ${GREEN}6.${RESET} 🛡️ 安装 SSL 面板 (Web自动证书管理)"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${YELLOW}6.${RESET} 老王一键工具箱 (外部)"
-    echo -e "  ${YELLOW}7.${RESET} 科技lion一键脚本 (外部)"
+    echo -e "  ${YELLOW}7.${RESET} 老王一键工具箱 (外部)"
+    echo -e "  ${YELLOW}8.${RESET} 科技lion一键脚本 (外部)"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${CYAN}8.${RESET} 更新 NooMili 主控脚本"
-    echo -e "  ${RED}9.${RESET} 卸载工具箱"
+    echo -e "  ${CYAN}9.${RESET} 更新 SSHTools 主控脚本"
+    echo -e "  ${RED}10.${RESET}卸载工具箱"
     echo -e "  ${GREEN}0.${RESET} 退出面板"
     echo -e "${CYAN}=========================================${RESET}"
     read -p "请输入你的选择: " choice
@@ -170,10 +190,11 @@ while true; do
         3) sys_clean ;;
         4) launch_mtp ;;
         5) launch_komari ;;
-        6) clear; bash <(curl -fsSL ssh_tool.eooce.com) ;;
-        7) clear; bash <(curl -sL kejilion.sh) ;;
-        8) update_nat ;;
-        9) uninstall_nat ;;
+        6) launch_lucky ;;
+        7) clear; bash <(curl -fsSL ssh_tool.eooce.com) ;;
+        8) clear; bash <(curl -sL kejilion.sh) ;;
+        9) update_nat ;;
+        10) uninstall_nat ;;
         0) clear; exit 0 ;;
         *) echo -e "${RED}输入错误，请重新选择！${RESET}"; sleep 1 ;;
     esac
