@@ -5,7 +5,7 @@
 ## 🌟 为什么需要用 CF Worker 反代？
 
 很多国内的机器或者部分 NAT 小鸡，直接拉取 `raw.githubusercontent.com` 会因为网络问题报错。
-利用 Cloudflare (CF) 免费的 Worker 功能，我们可以把脚本缓存到 CF 的全球边缘节点上，并绑定你自己的短域名（例如 `n.你的域名.com`）。
+利用 Cloudflare (CF) 免费的 Worker 功能，我们可以把脚本缓存到 CF 的全球边缘节点上，并绑定你自己的短域名（例如 `你的域名.com`）。
 这样不仅命令变得极其简短，而且**永不失联，完美防墙**！
 
 ## 🛠️ CF 网页版搭建步骤
@@ -25,7 +25,7 @@
 export default {
   async fetch(request, env, ctx) {
     // 这里填入 NooMili 主控脚本的官方直链
-    const githubRawUrl = "[https://raw.githubusercontent.com/lijboys/NatTools/main/NooMili.sh](https://raw.githubusercontent.com/lijboys/NatTools/main/NooMili.sh)";
+    const githubRawUrl = "[https://raw.githubusercontent.com/lijboys/SSHTools/main/NooMili.sh](https://raw.githubusercontent.com/lijboys/SSHTools/main/NooMili.sh)";
     
     // 发起请求并返回脚本内容
     const response = await fetch(githubRawUrl);
