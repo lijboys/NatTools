@@ -53,12 +53,9 @@ choose_and_generate_secret() {
     echo -e "✅ 已设置伪装域名: ${GREEN}${FAKE_DOMAIN}${RESET}"
 }
 
-# 强化的公网 IP 检测函数
 get_public_ip() {
     local temp_ip
-    # 尝试多个可靠的 API，超时设为 3 秒，防止卡死
     temp_ip=$(curl -s4m3 ipv4.icanhazip.com 2>/dev/null || curl -s4m3 api.ipify.org 2>/dev/null || curl -s4m3 ifconfig.me 2>/dev/null)
-    # 如果抓到的是有效 IP 格式，则返回，否则返回空
     if [[ "$temp_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo "$temp_ip"
     else
@@ -83,7 +80,6 @@ install_mtp() {
     rm -rf mtg.tar.gz mtg-2.1.7-linux-amd64
     
     AUTO_IP=$(get_public_ip)
-    # 如果没获取到，给个明确的提示词
     DISPLAY_IP=${AUTO_IP:-"获取失败,请手动输入!"}
     
     echo ""
@@ -101,11 +97,9 @@ install_mtp() {
         read -p "👉 2. 请输入小鸡【内网监听端口】(回车默认与外网一致: $OUT_PORT): " IN_PORT
         IN_PORT=${IN_PORT:-$OUT_PORT}
         
-        # 强提醒：如果识别错误，一定要在这里手动输入！
         read -p "👉 3. 请输入商家【公网 IPv4 地址】(识别出: $DISPLAY_IP): " PUBLIC_IP
         PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
         
-        # 终极防呆：如果用户没输入，而且自动获取也失败了，拦住他不让继续
         if [ -z "$PUBLIC_IP" ]; then
             echo -e "${RED}错误：必须拥有公网 IP 才能生成有效链接！请重新运行并手动输入。${RESET}"
             exit 1
@@ -162,12 +156,14 @@ EOT
     fi
     
     TG_LINK="tg://proxy?server=${PUBLIC_IP}&port=${OUT_PORT}&secret=${SECRET}"
-    echo "IN_PORT=${IN_PORT}" > $INFO_FILE
-    echo "PUBLIC_IP=${PUBLIC_IP}" >> $INFO_FILE
-    echo "OUT_PORT=${OUT_PORT}" >> $INFO_FILE
-    echo "FAKE_DOMAIN=${FAKE_DOMAIN}" >> $INFO_FILE
-    echo "SECRET=${SECRET}" >> $INFO_FILE
-    echo "TG_LINK=${TG_LINK}" >> $INFO_FILE
+    
+    # 彻底修复保存 Bug：用双引号强制包裹变量，防止 Bash 误解析 '&' 符号
+    echo "IN_PORT=\"${IN_PORT}\"" > $INFO_FILE
+    echo "PUBLIC_IP=\"${PUBLIC_IP}\"" >> $INFO_FILE
+    echo "OUT_PORT=\"${OUT_PORT}\"" >> $INFO_FILE
+    echo "FAKE_DOMAIN=\"${FAKE_DOMAIN}\"" >> $INFO_FILE
+    echo "SECRET=\"${SECRET}\"" >> $INFO_FILE
+    echo "TG_LINK=\"${TG_LINK}\"" >> $INFO_FILE
     
     echo -e "\n${GREEN}✅ 部署成功！程序已在后台监听端口 ${IN_PORT}${RESET}"
     echo -e "你的专属 TG 链接是：\n${YELLOW}${TG_LINK}${RESET}\n"
@@ -203,7 +199,6 @@ modify_config() {
     read -p "输入新【内网监听端口】 (回车保持 ${IN_PORT}): " NEW_IN
     NEW_IN=${NEW_IN:-$IN_PORT}
     
-    # 修改配置时同样提示现在的自动识别IP，防止NAT变动
     echo -e "${YELLOW}当前机器识别到的外部IP为: ${DISPLAY_IP}${RESET}"
     read -p "输入新【公网 IP】 (回车保持 ${PUBLIC_IP}): " NEW_IP
     NEW_IP=${NEW_IP:-$PUBLIC_IP}
@@ -225,12 +220,14 @@ bind-to = "0.0.0.0:${NEW_IN}"
 EOT
     
     TG_LINK="tg://proxy?server=${NEW_IP}&port=${NEW_OUT}&secret=${SECRET}"
-    echo "IN_PORT=${NEW_IN}" > $INFO_FILE
-    echo "PUBLIC_IP=${NEW_IP}" >> $INFO_FILE
-    echo "OUT_PORT=${NEW_OUT}" >> $INFO_FILE
-    echo "FAKE_DOMAIN=${FAKE_DOMAIN}" >> $INFO_FILE
-    echo "SECRET=${SECRET}" >> $INFO_FILE
-    echo "TG_LINK=${TG_LINK}" >> $INFO_FILE
+    
+    # 彻底修复保存 Bug：用双引号强制包裹变量
+    echo "IN_PORT=\"${NEW_IN}\"" > $INFO_FILE
+    echo "PUBLIC_IP=\"${NEW_IP}\"" >> $INFO_FILE
+    echo "OUT_PORT=\"${NEW_OUT}\"" >> $INFO_FILE
+    echo "FAKE_DOMAIN=\"${FAKE_DOMAIN}\"" >> $INFO_FILE
+    echo "SECRET=\"${SECRET}\"" >> $INFO_FILE
+    echo "TG_LINK=\"${TG_LINK}\"" >> $INFO_FILE
     
     if command -v systemctl >/dev/null 2>&1; then
         systemctl restart mtg
