@@ -67,30 +67,39 @@ install_mtp() {
     AUTO_IP=$(curl -s4m5 ifconfig.me || curl -s4m5 ipinfo.io/ip)
     echo ""
     echo -e "${CYAN}--- 请选择你的机器网络环境 ---${RESET}"
-    echo -e "  ${GREEN}1.${RESET} 独立 VPS (拥有独立公网 IP，全端口开放)"
-    echo -e "  ${YELLOW}2.${RESET} NAT 小鸡 (仅开放部分映射端口)"
+    echo -e "  ${GREEN}1.${RESET} NAT 小鸡 (仅开放部分映射端口) [默认]"
+    echo -e "  ${YELLOW}2.${RESET} 独立 VPS (拥有独立公网 IP，全端口开放)"
     read -p "请输入序号 (回车默认选 1): " net_choice
     
     echo ""
-    if [ "$net_choice" == "2" ]; ]; then
-        # NAT 小鸡逻辑
-        read -p "👉 1. 请输入小鸡【内网端口】 (10000-60000，回车默认随机): " IN_PORT
-        if [ -z "$IN_PORT" ]; then
-            IN_PORT=$(awk 'BEGIN{srand(); print int(10000+rand()*50001)}')
-            echo -e "   ${GREEN}✅ 已为你随机分配内网端口: ${IN_PORT}${RESET}"
+    # 防呆设计：回车为空或输入 1，一律走 NAT 逻辑
+    if [ -z "$net_choice" ] || [ "$net_choice" == "1" ]; then
+        echo -e "${YELLOW}💡 提示: NAT 小鸡必须配置外网映射端口，否则 TG 无法连接。${RESET}"
+        read -p "👉 1. 请输入商家分配的【公网/外网可用端口】: " OUT_PORT
+        if [ -z "$OUT_PORT" ]; then
+            echo -e "${RED}错误：NAT 机器必须手动输入外网可用端口！安装中止。${RESET}"
+            exit 1
         fi
-        read -p "👉 2. 请输入商家【公网 IPv4 地址】 (回车默认 $AUTO_IP): " PUBLIC_IP
+        
+        read -p "👉 2. 请输入小鸡本地的【内网监听端口】(回车默认与外网一致: $OUT_PORT): " IN_PORT
+        IN_PORT=${IN_PORT:-$OUT_PORT}
+        
+        read -p "👉 3. 请输入商家【公网 IPv4 地址】(回车尝试自动获取: $AUTO_IP): " PUBLIC_IP
         PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
-        read -p "👉 3. 请输入分配的【公网端口】 (回车默认与内网一致: $IN_PORT): " OUT_PORT
-        OUT_PORT=${OUT_PORT:-$IN_PORT}
-    else
-        # 独立 VPS 逻辑
+        
+        echo -e "   ${GREEN}✅ NAT 节点配置完成 -> IP: ${PUBLIC_IP} | 内网端口: ${IN_PORT} | 外网端口: ${OUT_PORT}${RESET}"
+
+    # 选择 2 走 VPS 逻辑
+    elif [ "$net_choice" == "2" ]; then
         echo -e "${YELLOW}💡 提示: 独立 VPS 推荐使用 443 端口(最隐蔽)，但如果你机器上装了建站面板(占用443)，请换一个别的端口。${RESET}"
         read -p "👉 请输入你想使用的端口 (回车默认 443): " IN_PORT
         IN_PORT=${IN_PORT:-443}
         OUT_PORT=$IN_PORT
         PUBLIC_IP=$AUTO_IP
-        echo -e "   ${GREEN}✅ 已配置公网 IP: ${PUBLIC_IP} , 端口: ${IN_PORT}${RESET}"
+        echo -e "   ${GREEN}✅ VPS 节点配置完成 -> IP: ${PUBLIC_IP} | 端口: ${IN_PORT}${RESET}"
+    else
+        echo -e "${RED}输入错误，请输入 1 或 2！${RESET}"
+        exit 1
     fi
     
     choose_and_generate_secret
@@ -223,7 +232,7 @@ fi
 while true; do
     clear
     echo -e "${CYAN}=========================================${RESET}"
-    echo -e "     🦇 MTP 代理管理面板 (支持 VPS/NAT) 🦇"
+    echo -e "    🦇 MTP 代理管理面板 (支持 VPS/NAT) 🦇"
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "当前状态: $(get_status)"
     echo -e "快捷指令: ${GREEN}mtp${RESET}"
@@ -236,15 +245,19 @@ while true; do
     echo -e "  ${RED}6.${RESET} 彻底卸载 MTP"
     echo -e "  ${CYAN}7.${RESET} 更新面板代码 (从 GitHub 同步)"
     echo -e "  ${GREEN}0.${RESET} 退出面板"
-    echo -e "  ${YELLOW}00.${RESET}返回主菜单 (NooMili)"
+    echo -e "  ${YELLOW}00.${RESET} 返回主菜单 (NooMili)"
     echo -e "${CYAN}=========================================${RESET}"
     read -p "请输入序号选择功能: " choice
     
     case $choice in
-        1) install_mtp ;; 2) view_link ;; 3) modify_config ;;
+        1) install_mtp ;; 
+        2) view_link ;; 
+        3) modify_config ;;
         4) if command -v systemctl >/dev/null 2>&1; then systemctl start mtg; else nohup /usr/local/bin/mtg run /etc/mtg.toml > /var/log/mtg.log 2>&1 & fi; echo -e "${GREEN}已启动！${RESET}"; sleep 1 ;;
         5) if command -v systemctl >/dev/null 2>&1; then systemctl stop mtg; else pkill -f "mtg run"; fi; echo -e "${RED}已停止！${RESET}"; sleep 1 ;;
-        6) uninstall_mtp ;; 7) update_script ;; 0) clear; exit 0 ;;
+        6) uninstall_mtp ;; 
+        7) update_script ;; 
+        0) clear; exit 0 ;;
         00) if [ -f "/usr/local/bin/n" ]; then exec /usr/local/bin/n; else echo -e "${RED}未安装主控！请先运行主控安装命令。${RESET}"; sleep 2; fi ;;
         *) echo -e "${RED}输入错误！${RESET}"; sleep 1 ;;
     esac
