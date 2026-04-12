@@ -393,8 +393,15 @@ launch_lucky() {
     echo -e "支持自动申请 SSL 证书 + 反向代理。"
     echo -e "非常适合 NAT 小鸡使用！"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    read -p "确认安装 Lucky 面板吗？[Y/n]: " install_choice
-    if [[ "$install_choice" == "Y" || "$install_choice" == "y" || "$install_choice" == "" ]]; then
+
+    if command -v lucky >/dev/null 2>&1 || [ -d "/etc/lucky" ] || [ -d "/opt/lucky" ]; then
+        echo -e "${YELLOW}⚠️ 检测到 Lucky 可能已经安装。${RESET}"
+        read -p "是否仍然继续执行官方安装脚本？[Y/n]: " install_choice
+    else
+        read -p "确认安装 Lucky 面板吗？[Y/n]: " install_choice
+    fi
+
+    if [[ -z "$install_choice" || "$install_choice" == "Y" || "$install_choice" == "y" ]]; then
         echo -e "${YELLOW}正在调用 Lucky 官方一键安装脚本...${RESET}"
         curl -fsSL https://gitee.com/gdy666/lucky/raw/main/install.sh | bash
         echo -e "${GREEN}✅ Lucky 部署完毕！${RESET}"
@@ -410,8 +417,8 @@ run_external() {
     clear
     echo -e "${YELLOW}即将执行外部脚本: ${CYAN}$name${RESET}"
     echo -e "${RED}⚠️ 来自第三方，请确认你信任该来源！${RESET}"
-    read -p "确认继续吗？[y/N]: " confirm
-    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+    read -p "确认继续吗？[Y/n]: " confirm
+    if [[ -z "$confirm" || "$confirm" == "y" || "$confirm" == "Y" ]]; then
         eval "$cmd"
     else
         echo -e "${YELLOW}已取消。${RESET}"
@@ -508,13 +515,13 @@ while true; do
     echo -e "  ${YELLOW}8.${RESET} 老王一键工具箱 (外部)"
     echo -e "  ${YELLOW}9.${RESET} 科技lion一键脚本 (外部)"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${CYAN}10.${RESET} 更新 SSHTools 主控脚本"
-    echo -e "  ${RED}11.${RESET} 卸载工具箱"
+    echo -e "  ${CYAN}u.${RESET} 更新 SSHTools 主控脚本"
+    echo -e "  ${RED}x.${RESET} 卸载工具箱"
     echo -e "  ${GREEN}0.${RESET} 退出面板"
     echo -e "${CYAN}=========================================${RESET}"
     read -p "请输入你的选择: " choice
     
-    case $choice in
+    case "$choice" in
         1) show_sys_info ;;
         2) update_system ;;
         3) clean_system ;;
@@ -524,8 +531,8 @@ while true; do
         7) launch_lucky ;;
         8) run_external "老王一键工具箱" "bash <(curl -fsSL ssh_tool.eooce.com)" ;;
         9) run_external "科技lion一键脚本" "bash <(curl -sL kejilion.sh)" ;;
-        10) update_nat ;;
-        11) uninstall_nat ;;
+        u|U) update_nat ;;
+        x|X) uninstall_nat ;;
         0) clear; exit 0 ;;
         *) echo -e "${RED}输入错误，请重新选择！${RESET}"; sleep 1 ;;
     esac
