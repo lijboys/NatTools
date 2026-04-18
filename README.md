@@ -68,6 +68,6 @@ n
 > 若运行指令时提示找不到 `curl` 或 `wget`，请先根据你的系统执行安装：
 >
 >   * Ubuntu/Debian：`apt-get install -y curl wget`
->   * Alpine：`apk add curl wget`
+>   * Alpine：`apk add curl wget bash`
 >   * Fedora：`dnf install -y curl wget`
 >   * CentOS/Rocky/Oracle等：`yum install -y curl wget`
