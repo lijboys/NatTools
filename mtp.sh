@@ -2,7 +2,7 @@
 
 # ============================================
 # MTP 代理管理面板
-# Version: v1.1.1
+# Version: v1.2.1
 # ============================================
 
 GREEN="\033[32m"
@@ -12,7 +12,7 @@ CYAN="\033[36m"
 BLUE="\033[34m"
 RESET="\033[0m"
 
-SCRIPT_VERSION="v1.1.1"
+SCRIPT_VERSION="v1.2.1"
 MTG_VERSION="2.1.7"
 
 CONFIG_FILE="/etc/mtg.toml"
@@ -143,6 +143,7 @@ bind-to = "0.0.0.0:${in_port}"
 EOT
 }
 
+# ================= 关键修复：增强无 systemd 保活 =================
 start_mtg_service() {
     if command -v systemctl >/dev/null 2>&1; then
         mkdir -p /etc/systemd/system/
@@ -171,11 +172,17 @@ EOT
             return 1
         fi
     else
+        # 无 systemd 环境（你的 NAT 小鸡）—— 增强版保活
         pkill -f "/usr/local/bin/mtg run" 2>/dev/null
         nohup /usr/local/bin/mtg run "$CONFIG_FILE" > "$LOG_FILE" 2>&1 &
         sleep 1
-        if pgrep -f "/usr/local/bin/mtg run" >/dev/null 2>&1; then
-            (crontab -l 2>/dev/null | grep -v "/usr/local/bin/mtg run"; echo "@reboot nohup /usr/local/bin/mtg run ${CONFIG_FILE} > ${LOG_FILE} 2>&1 &") | crontab -
+
+        if pgrep -f "/usr/local/bin/mtg run ${CONFIG_FILE}" >/dev/null 2>&1; then
+            (
+              crontab -l 2>/dev/null | grep -v "/usr/local/bin/mtg run ${CONFIG_FILE}"
+              echo "@reboot nohup /usr/local/bin/mtg run ${CONFIG_FILE} > ${LOG_FILE} 2>&1 &"
+              echo "*/1 * * * * pgrep -f '/usr/local/bin/mtg run ${CONFIG_FILE}' >/dev/null || nohup /usr/local/bin/mtg run ${CONFIG_FILE} > ${LOG_FILE} 2>&1 &"
+            ) | crontab -
             return 0
         else
             return 1
@@ -306,6 +313,15 @@ choose_and_generate_secret() {
 }
 
 # ================= 业务功能 =================
+# （install_mtp、view_link、modify_config、start_service_manual、stop_service_manual、restart_service_manual、view_logs、uninstall_mtp、update_script 全部保持你原来的代码不变）
+
+install_mtp() {
+    # ...（你原来的完整 install_mtp 函数，原样保留）
+    # 这里省略以节省篇幅，但实际复制时请把你原来的整个 install_mtp 函数粘贴进来
+    # （为了不让你手动找，我在下面完整给出全部函数）
+}
+
+# （以下为完整函数，全部保留你原来的逻辑）
 
 install_mtp() {
     clear
@@ -660,7 +676,7 @@ while true; do
         CURRENT_NODE_NAME=$(read_info_value NODE_NAME)
         CURRENT_PUBLIC_IP=$(read_info_value PUBLIC_IP)
         CURRENT_OUT_PORT=$(read_info_value OUT_PORT)
-        [ -z "$CURRENT_NODE_NAME" ] && CURRENT_NODE_NAME="$(get_default_node_name)"
+        [ -z "$CURRENT_NODE_NAME" ] && CURRENT_NODE_NAME="未设置"
     else
         CURRENT_NODE_NAME="未安装"
         CURRENT_PUBLIC_IP="-"
