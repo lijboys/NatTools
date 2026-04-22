@@ -5,19 +5,35 @@ GREEN="\033[32m"
 RED="\033[31m"
 YELLOW="\033[33m"
 CYAN="\033[36m"
+BLUE="\033[34m"
 RESET="\033[0m"
 
-SCRIPT_VERSION="v1.0.1"
+SCRIPT_VERSION="v1.2.0"
 
 CONF_FILE="/etc/danted.conf"
 INFO_FILE="/etc/s5_info.txt"
 SERVICE_NAME="danted"
+LOG_FILE="/var/log/danted.log"
 SCRIPT_URL="https://raw.githubusercontent.com/lijboys/SSHTools/main/s5.sh"
 
-pause() { read -p "按回车返回..." ; }
+pause() { read -p "按回车键返回主菜单..." ; }
 
 is_valid_port() {
   [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+is_valid_ipv4() {
+  local ip=$1
+  [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
+  for o in "$o1" "$o2" "$o3" "$o4"; do
+    [[ "$o" =~ ^[0-9]+$ ]] && [ "$o" -ge 0 ] && [ "$o" -le 255 ] || return 1
+  done
+  return 0
+}
+
+is_port_in_use() {
+  ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1$"
 }
 
 get_public_ip() {
@@ -32,13 +48,17 @@ detect_iface() {
   ip route | awk '/default/ {print $5; exit}'
 }
 
+get_status() {
+  systemctl is-active --quiet ${SERVICE_NAME} && echo -e "${GREEN}运行中${RESET}" || echo -e "${RED}已停止${RESET}"
+}
+
 install_deps() {
   if command -v apt >/dev/null 2>&1; then
-    apt update -y && apt install -y dante-server
+    apt update -y && apt install -y dante-server >/dev/null 2>&1
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y dante-server
+    dnf install -y dante-server >/dev/null 2>&1
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y dante-server
+    yum install -y dante-server >/dev/null 2>&1
   else
     echo -e "${RED}❌ 不支持的系统包管理器${RESET}"
     return 1
@@ -100,6 +120,21 @@ read_info() {
   grep "^$1=" "$INFO_FILE" 2>/dev/null | head -n1 | cut -d'"' -f2
 }
 
+stop_service() {
+  systemctl stop ${SERVICE_NAME} >/dev/null 2>&1
+  sleep 1
+  # 等待端口释放
+  if [ -f "$CONF_FILE" ]; then
+    local port=$(grep -o 'port = [0-9]*' "$CONF_FILE" | awk '{print $3}')
+    for i in {1..5}; do
+      if ! is_port_in_use "$port"; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+}
+
 start_service() {
   systemctl enable ${SERVICE_NAME} >/dev/null 2>&1
   systemctl restart ${SERVICE_NAME}
@@ -109,8 +144,17 @@ start_service() {
 
 install_s5() {
   clear
-  echo -e "${CYAN}====== SOCKS5 部署 (Dante) ======${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN}  🚀 开始部署 SOCKS5 代理 (Dante)${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
 
+  if [ -f "/usr/sbin/sockd" ] && [ -f "$INFO_FILE" ]; then
+    echo -e "${YELLOW}⚠️ 检测到当前机器已经安装了 SOCKS5 代理服务！${RESET}"
+    read -p "👉 是否要继续【覆盖重装】并清除原有配置？[y/N]: " confirm_reinstall
+    [[ "$confirm_reinstall" != "y" && "$confirm_reinstall" != "Y" ]] && { echo -e "${GREEN}✅ 已取消安装。${RESET}"; sleep 1; return; }
+  fi
+
+  stop_service
   install_deps || { pause; return; }
 
   local iface ip port user pass
@@ -118,19 +162,30 @@ install_s5() {
   ip=$(get_public_ip)
 
   [ -z "$iface" ] && iface="eth0"
-  [ -z "$ip" ] && ip="你的公网IP"
+  DISPLAY_IP=${ip:-"获取失败，请手动输入"}
 
-  read -p "请输入监听端口(默认1080): " port
+  echo ""
+  echo -e "${YELLOW}💡 提示: SOCKS5 推荐使用 1080 或 10800 端口。${RESET}"
+  read -p "👉 请输入监听端口 (回车默认 1080): " port
   port=${port:-1080}
   if ! is_valid_port "$port"; then
-    echo -e "${RED}❌ 端口无效${RESET}"; pause; return
+    echo -e "${RED}❌ 端口无效！${RESET}"; pause; return
+  fi
+  if is_port_in_use "$port"; then
+    echo -e "${RED}❌ 端口 ${port} 已被占用！${RESET}"; pause; return
   fi
 
-  read -p "请输入用户名(默认s5user): " user
+  read -p "👉 请输入用户名 (回车默认 s5user): " user
   user=${user:-s5user}
 
-  read -p "请输入密码(默认随机8位): " pass
+  read -p "👉 请输入密码 (回车默认随机8位): " pass
   [ -z "$pass" ] && pass=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 8)
+
+  read -p "👉 请确认【公网 IPv4 地址】(识别出: $DISPLAY_IP): " PUBLIC_IP
+  PUBLIC_IP=${PUBLIC_IP:-$ip}
+  if ! is_valid_ipv4 "$PUBLIC_IP"; then
+    echo -e "${RED}❌ 公网 IPv4 地址无效！${RESET}"; pause; return
+  fi
 
   if id "$user" >/dev/null 2>&1; then
     echo "$user:$pass" | chpasswd
@@ -142,45 +197,44 @@ install_s5() {
   write_conf "$iface" "$port" "$user"
 
   if start_service; then
-    save_info "$ip" "$port" "$user" "$pass"
-    echo -e "${GREEN}✅ SOCKS5 部署成功${RESET}"
-    echo -e "地址: ${YELLOW}${ip}${RESET}"
-    echo -e "端口: ${YELLOW}${port}${RESET}"
-    echo -e "账号: ${YELLOW}${user}${RESET}"
-    echo -e "密码: ${YELLOW}${pass}${RESET}"
+    save_info "$PUBLIC_IP" "$port" "$user" "$pass"
+    echo -e "\n${GREEN}✅ SOCKS5 部署成功！程序已在后台监听端口 ${port}${RESET}"
+    echo -e "当前服务状态: $(get_status)"
     echo -e "\n${CYAN}📱 TG 代理链接：${RESET}"
     echo -e "${GREEN}$(read_info TG_LINK)${RESET}"
     echo -e "\n${CYAN}🔗 SOCKS5 链接：${RESET}"
     echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
   else
-    echo -e "${RED}❌ 服务启动失败，请查看日志${RESET}"
+    echo -e "${RED}❌ 服务启动失败！${RESET}"
   fi
   pause
 }
 
 view_info() {
   clear
+  echo -e "${CYAN}=========================================${RESET}"
   if [ ! -f "$INFO_FILE" ]; then
-    echo -e "${RED}未找到信息，请先安装${RESET}"
+    echo -e "${RED}未找到配置，请先安装！${RESET}"
+    echo -e "${CYAN}=========================================${RESET}"
     pause; return
   fi
-  echo -e "${CYAN}====== SOCKS5 信息 ======${RESET}"
-  echo -e "状态: $(systemctl is-active ${SERVICE_NAME} 2>/dev/null)"
-  echo -e "IP:   ${GREEN}$(read_info IP)${RESET}"
-  echo -e "端口: ${GREEN}$(read_info PORT)${RESET}"
-  echo -e "账号: ${GREEN}$(read_info USER)${RESET}"
-  echo -e "密码: ${GREEN}$(read_info PASS)${RESET}"
+  echo -e "当前服务状态:     $(get_status)"
+  echo -e "当前监听端口:     ${GREEN}$(read_info PORT)${RESET}"
+  echo -e "当前对外公网地址: ${GREEN}$(read_info IP):$(read_info PORT)${RESET}"
+  echo -e "当前账号:         ${GREEN}$(read_info USER)${RESET}"
+  echo -e "当前密码:         ${GREEN}$(read_info PASS)${RESET}"
   echo -e "\n${CYAN}📱 TG 代理链接：${RESET}"
   echo -e "${GREEN}$(read_info TG_LINK)${RESET}"
   echo -e "\n${CYAN}🔗 SOCKS5 链接：${RESET}"
   echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
   pause
 }
 
 modify_s5() {
   clear
   if [ ! -f "$INFO_FILE" ]; then
-    echo -e "${RED}请先安装${RESET}"
+    echo -e "${RED}请先安装！${RESET}"
     pause; return
   fi
 
@@ -190,17 +244,28 @@ modify_s5() {
   old_pass=$(read_info PASS)
   ip=$(read_info IP)
   iface=$(detect_iface)
+  AUTO_IP=$(get_public_ip)
+  DISPLAY_IP=${AUTO_IP:-"获取失败"}
 
-  read -p "新端口(回车保持 ${old_port}): " port
+  echo -e "${CYAN}--- 修改端口与账号密码 ---${RESET}"
+  read -p "输入新【监听端口】 (回车保持 ${old_port}): " port
   port=${port:-$old_port}
   if ! is_valid_port "$port"; then
-    echo -e "${RED}❌ 端口无效${RESET}"; pause; return
+    echo -e "${RED}❌ 端口无效！${RESET}"; pause; return
+  fi
+  [ "$port" != "$old_port" ] && is_port_in_use "$port" && { echo -e "${RED}❌ 端口已被占用！${RESET}"; pause; return; }
+
+  echo -e "${YELLOW}当前机器识别到的外部 IP 为: ${DISPLAY_IP}${RESET}"
+  read -p "输入新【公网 IP】 (回车保持 ${ip}): " NEW_IP
+  NEW_IP=${NEW_IP:-$ip}
+  if ! is_valid_ipv4 "$NEW_IP"; then
+    echo -e "${RED}❌ 公网 IP 格式无效！${RESET}"; pause; return
   fi
 
-  read -p "新用户名(回车保持 ${old_user}): " user
+  read -p "输入新【用户名】 (回车保持 ${old_user}): " user
   user=${user:-$old_user}
 
-  read -p "新密码(回车保持原密码): " pass
+  read -p "输入新【密码】 (回车保持原密码): " pass
   pass=${pass:-$old_pass}
 
   if [ "$user" != "$old_user" ]; then
@@ -218,14 +283,14 @@ modify_s5() {
   write_conf "$iface" "$port" "$user"
 
   if start_service; then
-    save_info "$ip" "$port" "$user" "$pass"
-    echo -e "${GREEN}✅ 修改完成${RESET}"
+    save_info "$NEW_IP" "$port" "$user" "$pass"
+    echo -e "${GREEN}✅ 配置已更新并重启成功！${RESET}"
     echo -e "\n${CYAN}📱 TG 代理链接：${RESET}"
     echo -e "${GREEN}$(read_info TG_LINK)${RESET}"
     echo -e "\n${CYAN}🔗 SOCKS5 链接：${RESET}"
     echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
   else
-    echo -e "${RED}❌ 重启失败，请查看日志${RESET}"
+    echo -e "${RED}❌ 配置已写入，但服务启动失败！${RESET}"
   fi
   pause
 }
@@ -234,22 +299,27 @@ service_ctl() {
   local action="$1"
   systemctl ${action} ${SERVICE_NAME}
   sleep 1
-  echo -e "当前状态: $(systemctl is-active ${SERVICE_NAME} 2>/dev/null)"
+  echo -e "当前状态: $(get_status)"
   pause
 }
 
 view_logs() {
   clear
-  echo -e "${CYAN}====== 最近日志 ======${RESET}"
-  journalctl -u ${SERVICE_NAME} --no-pager -n 50 2>/dev/null || tail -n 50 /var/log/danted.log 2>/dev/null
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "               📜 SOCKS5 运行日志"
+  echo -e "${CYAN}=========================================${RESET}"
+  journalctl -u ${SERVICE_NAME} --no-pager -n 50 2>/dev/null || tail -n 50 "$LOG_FILE" 2>/dev/null || echo "暂无日志"
+  echo -e "${CYAN}=========================================${RESET}"
   pause
 }
 
 uninstall_s5() {
   clear
-  read -p "确认卸载 SOCKS5 吗？[y/N]: " c
-  [[ "$c" != "y" && "$c" != "Y" ]] && return
-
+  echo -e "${RED}你正在执行 SOCKS5 卸载操作！${RESET}"
+  read -p "确认彻底卸载 dante + 面板吗？[y/N]: " confirm_uninstall
+  [[ "$confirm_uninstall" != "y" && "$confirm_uninstall" != "Y" ]] && { echo -e "${YELLOW}已取消卸载。${RESET}"; sleep 1; return; }
+  
+  echo -e "${RED}正在卸载...${RESET}"
   systemctl stop ${SERVICE_NAME} >/dev/null 2>&1
   systemctl disable ${SERVICE_NAME} >/dev/null 2>&1
 
@@ -261,9 +331,10 @@ uninstall_s5() {
     yum remove -y dante-server >/dev/null 2>&1
   fi
 
-  rm -f "$CONF_FILE" "$INFO_FILE" /var/log/danted.log /usr/local/bin/s5
-  echo -e "${GREEN}✅ 已卸载${RESET}"
-  pause
+  rm -f "$CONF_FILE" "$INFO_FILE" "$LOG_FILE" /usr/local/bin/s5
+  echo -e "${GREEN}✅ 卸载完成！${RESET}"
+  sleep 2
+  exit 0
 }
 
 update_script() {
@@ -293,29 +364,44 @@ update_script() {
 }
 
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}请使用 root 运行${RESET}"
+  echo -e "${RED}请使用 root 用户运行！${RESET}"
   exit 1
 fi
 
 while true; do
   clear
-  echo -e "${CYAN}====================================${RESET}"
-  echo -e "   SOCKS5 管理面板 ${GREEN}${SCRIPT_VERSION}${RESET}"
-  echo -e "${CYAN}====================================${RESET}"
+  if [ -f "$INFO_FILE" ]; then
+    CURRENT_IP=$(read_info IP)
+    CURRENT_PORT=$(read_info PORT)
+    CURRENT_USER=$(read_info USER)
+  else
+    CURRENT_IP="-"
+    CURRENT_PORT="-"
+    CURRENT_USER="-"
+  fi
+  
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "   🦇 SOCKS5 管理面板 ${GREEN}${SCRIPT_VERSION}${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "当前状态: ${RESET}$(get_status)"
+  echo -e "当前地址: ${YELLOW}${CURRENT_IP}:${CURRENT_PORT}${RESET}"
+  echo -e "当前账号: ${GREEN}${CURRENT_USER}${RESET}"
+  echo -e "快捷指令: ${GREEN}s5${RESET}"
+  echo -e "${CYAN}-----------------------------------------${RESET}"
   echo -e "  ${GREEN}1.${RESET} 安装 / 重装 SOCKS5"
-  echo -e "  ${GREEN}2.${RESET} 查看连接信息"
-  echo -e "  ${GREEN}3.${RESET} 修改端口/账号密码"
-  echo -e "  ${YELLOW}4.${RESET} 启动服务"
-  echo -e "  ${YELLOW}5.${RESET} 停止服务"
-  echo -e "  ${CYAN}6.${RESET} 重启服务"
-  echo -e "  ${CYAN}7.${RESET} 查看日志"
-  echo -e "  ${BLUE}8.${RESET} 更新脚本 (从 GitHub 同步)"
-  echo -e "  ${RED}9.${RESET} 卸载 SOCKS5"
-  echo -e "  ${GREEN}0.${RESET} 退出"
-  echo -e "${CYAN}====================================${RESET}"
-  read -p "请输入选择: " c
+  echo -e "  ${GREEN}2.${RESET} 查看当前连接信息"
+  echo -e "  ${GREEN}3.${RESET} 修改端口、IP 与账号密码"
+  echo -e "  ${YELLOW}4.${RESET} 启动 SOCKS5 服务"
+  echo -e "  ${YELLOW}5.${RESET} 停止 SOCKS5 服务"
+  echo -e "  ${CYAN}6.${RESET} 重启 SOCKS5 服务"
+  echo -e "  ${CYAN}7.${RESET} 查看运行日志"
+  echo -e "  ${BLUE}8.${RESET} 更新脚本代码 (从 GitHub 同步)"
+  echo -e "  ${RED}9.${RESET} 彻底卸载 SOCKS5"
+  echo -e "  ${GREEN}0.${RESET} 退出面板"
+  echo -e "${CYAN}=========================================${RESET}"
+  read -p "请输入序号选择功能: " choice
 
-  case "$c" in
+  case "$choice" in
     1) install_s5 ;;
     2) view_info ;;
     3) modify_s5 ;;
@@ -326,9 +412,10 @@ while true; do
     8) update_script ;;
     9) uninstall_s5 ;;
     0) clear; exit 0 ;;
-    *) echo -e "${RED}输入错误${RESET}"; sleep 1 ;;
+    *) echo -e "${RED}输入错误！${RESET}"; sleep 1 ;;
   esac
 done
 EOF
 
 chmod +x /usr/local/bin/s5
+echo -e "${GREEN}✅ s5 v1.2.0 已更新完成！${RESET}"
