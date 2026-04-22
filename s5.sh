@@ -7,7 +7,7 @@ YELLOW="\033[33m"
 CYAN="\033[36m"
 RESET="\033[0m"
 
-SCRIPT_VERSION="v1.0.0"
+SCRIPT_VERSION="v1.0.1"
 
 CONF_FILE="/etc/danted.conf"
 INFO_FILE="/etc/s5_info.txt"
@@ -81,12 +81,17 @@ EOT
 }
 
 save_info() {
+  local ip="$1" port="$2" user="$3" pass="$4"
+  local socks5_link="socks5://${user}:${pass}@${ip}:${port}"
+  local tg_link="tg://socks?server=${ip}&port=${port}&user=${user}&pass=${pass}"
+  
   cat > "$INFO_FILE" <<EOT
-IP="$1"
-PORT="$2"
-USER="$3"
-PASS="$4"
-LINK="socks5://$3:$4@$1:$2"
+IP="${ip}"
+PORT="${port}"
+USER="${user}"
+PASS="${pass}"
+SOCKS5_LINK="${socks5_link}"
+TG_LINK="${tg_link}"
 EOT
 }
 
@@ -142,7 +147,10 @@ install_s5() {
     echo -e "端口: ${YELLOW}${port}${RESET}"
     echo -e "账号: ${YELLOW}${user}${RESET}"
     echo -e "密码: ${YELLOW}${pass}${RESET}"
-    echo -e "链接: ${GREEN}socks5://${user}:${pass}@${ip}:${port}${RESET}"
+    echo -e "\n${CYAN}📱 TG 代理链接：${RESET}"
+    echo -e "${GREEN}$(read_info TG_LINK)${RESET}"
+    echo -e "\n${CYAN}🔗 SOCKS5 链接：${RESET}"
+    echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
   else
     echo -e "${RED}❌ 服务启动失败，请查看日志${RESET}"
   fi
@@ -161,7 +169,10 @@ view_info() {
   echo -e "端口: ${GREEN}$(read_info PORT)${RESET}"
   echo -e "账号: ${GREEN}$(read_info USER)${RESET}"
   echo -e "密码: ${GREEN}$(read_info PASS)${RESET}"
-  echo -e "链接: ${YELLOW}$(read_info LINK)${RESET}"
+  echo -e "\n${CYAN}📱 TG 代理链接：${RESET}"
+  echo -e "${GREEN}$(read_info TG_LINK)${RESET}"
+  echo -e "\n${CYAN}🔗 SOCKS5 链接：${RESET}"
+  echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
   pause
 }
 
@@ -208,6 +219,10 @@ modify_s5() {
   if start_service; then
     save_info "$ip" "$port" "$user" "$pass"
     echo -e "${GREEN}✅ 修改完成${RESET}"
+    echo -e "\n${CYAN}📱 TG 代理链接：${RESET}"
+    echo -e "${GREEN}$(read_info TG_LINK)${RESET}"
+    echo -e "\n${CYAN}🔗 SOCKS5 链接：${RESET}"
+    echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
   else
     echo -e "${RED}❌ 重启失败，请查看日志${RESET}"
   fi
