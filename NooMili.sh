@@ -1,9 +1,8 @@
-cat > /usr/local/bin/n <<'EOF'
 #!/bin/bash
 
 # ============================================
 # SSHTools 工具箱 - NAT/VPS 多功能管理面板
-# Version: v2.2.6
+# Version: v2.2.5
 # ============================================
 
 GREEN="\033[32m"
@@ -13,27 +12,33 @@ CYAN="\033[36m"
 BLUE="\033[34m"
 RESET="\033[0m"
 
-SCRIPT_VERSION="v2.2.6"
+SCRIPT_VERSION="v2.2.5"
 
+# GitHub Raw 链接
 NAT_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/NooMili.sh"
 MTP_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/mtp.sh"
 KOMARI_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/komari.sh"
 SOCKS5_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/s5.sh"
 
+# 数据文件
 IP_FILE="/etc/.noomili_ip"
 PORTS_FILE="/etc/.noomili_ports"
 
+# Root 检查
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}请使用 root 用户运行！${RESET}"
     exit 1
 fi
 
+# ================= 通用函数 =================
+
 pause() {
     read -p "按回车键返回主菜单..."
 }
 
+# 通用公网IP获取（带超时和多源）
 get_public_ip() {
-    local ip_type=$1
+    local ip_type=$1  # 4 或 6
     local sources=()
     if [ "$ip_type" = "4" ]; then
         sources=("ipv4.icanhazip.com" "api.ipify.org" "ifconfig.me")
@@ -52,6 +57,7 @@ get_public_ip() {
     return 1
 }
 
+# 安装主控快捷键 n
 install_shortcut() {
     if [ ! -f "/usr/local/bin/n" ]; then
         if curl -fsSL --connect-timeout 10 "${NAT_URL}" -o /usr/local/bin/n 2>/dev/null; then
@@ -63,11 +69,14 @@ install_shortcut() {
 }
 install_shortcut
 
+# ================= 系统基础功能 =================
+
 show_sys_info() {
     clear
     echo -e "${CYAN}====================================================${RESET}"
     echo -e "                 🖥️  系统核心信息看板"
     echo -e "${CYAN}====================================================${RESET}"
+    echo -e "${YELLOW}正在探测各项硬件与网络指标，请稍候...${RESET}"
     
     OS_NAME=$(grep -w "PRETTY_NAME" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
     [ -z "$OS_NAME" ] && OS_NAME="Unknown OS"
@@ -282,6 +291,8 @@ clean_system() {
     pause
 }
 
+# ================= NAT 信息卡 =================
+
 nat_info_card() {
     clear
     echo -e "${CYAN}====================================================${RESET}"
@@ -333,6 +344,8 @@ nat_info_card() {
     echo -e "${CYAN}====================================================${RESET}"
     pause
 }
+
+# ================= 业务与外部脚本 =================
 
 launch_mtp() {
     if [ ! -f "/usr/local/bin/mtp" ]; then
@@ -400,6 +413,7 @@ launch_lucky() {
     pause
 }
 
+# 第三方外部脚本 → 默认 Y（直接回车就执行）
 run_external() {
     local name=$1
     local cmd=$2
@@ -453,16 +467,16 @@ uninstall_nat() {
                 systemctl stop mtg >/dev/null 2>&1
                 systemctl disable mtg >/dev/null 2>&1
                 rm -f /etc/systemd/system/mtg.service
-                systemctl daemon-reload 2>/dev/null
+                systemctl daemon-reload
                 pkill -f "mtg run" 2>/dev/null
-                crontab -l 2>/dev/null | grep -v "mtg run" | crontab - 2>/dev/null
+                crontab -l 2>/dev/null | grep -v "mtg run" | crontab -
                 rm -f /usr/local/bin/mtg /etc/mtg.toml /etc/mtg_info.txt /usr/local/bin/mtp
             fi
             if [ -f "/usr/local/bin/komari" ]; then
                 systemctl stop komari >/dev/null 2>&1
                 systemctl disable komari >/dev/null 2>&1
                 rm -f /etc/systemd/system/komari.service
-                systemctl daemon-reload 2>/dev/null
+                systemctl daemon-reload
                 pkill -f "komari" 2>/dev/null
                 rm -rf /opt/komari /usr/local/bin/komari
             fi
@@ -485,6 +499,7 @@ uninstall_nat() {
     esac
 }
 
+# ================= 主菜单 =================
 while true; do
     clear
     echo -e "${CYAN} _    _             __  __ _ _ _ ${RESET}"
@@ -533,8 +548,3 @@ while true; do
         *) echo -e "${RED}输入错误，请重新选择！${RESET}"; sleep 1 ;;
     esac
 done
-EOF
-
-chmod +x /usr/local/bin/n
-echo -e "${GREEN}✅ 脚本已安装完成！${RESET}"
-n
