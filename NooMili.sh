@@ -1,6 +1,11 @@
 cat > /usr/local/bin/n <<'EOF'
 #!/bin/bash
 
+# ============================================
+# SSHTools 工具箱 - NAT/VPS 多功能管理面板
+# Version: v2.2.6
+# ============================================
+
 GREEN="\033[32m"
 RED="\033[31m"
 YELLOW="\033[33m"
@@ -14,10 +19,6 @@ NAT_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/NooM
 MTP_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/mtp.sh"
 KOMARI_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/komari.sh"
 SOCKS5_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/s5.sh"
-
-# 第三方脚本
-LAOWANG_URL="https://raw.githubusercontent.com/laowaang/Shell/main/install.sh"
-KEJI_LION_URL="https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh"
 
 IP_FILE="/etc/.noomili_ip"
 PORTS_FILE="/etc/.noomili_ports"
@@ -322,6 +323,14 @@ nat_info_card() {
     done
     
     echo -e "${CYAN}====================================================${RESET}"
+    echo -e "${YELLOW} 一键复制格式（可粘贴到笔记）:${RESET}"
+    echo ""
+    echo "  主机: $HOSTNAME_INFO"
+    echo "  IPv4: $CARD_IPV4"
+    echo "  IPv6: $CARD_IPV6"
+    echo "  端口: $CARD_PORTS"
+    echo ""
+    echo -e "${CYAN}====================================================${RESET}"
     pause
 }
 
@@ -334,9 +343,8 @@ launch_mtp() {
             return
         fi
         chmod +x /usr/local/bin/mtp
-        sleep 1
     fi
-    exec /usr/local/bin/mtp
+    /usr/local/bin/mtp
 }
 
 launch_komari() {
@@ -348,9 +356,8 @@ launch_komari() {
             return
         fi
         chmod +x /usr/local/bin/komari
-        sleep 1
     fi
-    exec /usr/local/bin/komari
+    /usr/local/bin/komari
 }
 
 launch_s5() {
@@ -362,9 +369,8 @@ launch_s5() {
             return
         fi
         chmod +x /usr/local/bin/s5
-        sleep 1
     fi
-    exec /usr/local/bin/s5
+    /usr/local/bin/s5
 }
 
 launch_lucky() {
@@ -394,35 +400,18 @@ launch_lucky() {
     pause
 }
 
-launch_laowang() {
+run_external() {
+    local name=$1
+    local cmd=$2
     clear
-    echo -e "${CYAN}=========================================${RESET}"
-    echo -e "        🔧 老王一键工具箱"
-    echo -e "${CYAN}=========================================${RESET}"
+    echo -e "${YELLOW}即将执行外部脚本: ${CYAN}$name${RESET}"
     echo -e "${RED}⚠️ 来自第三方，请确认你信任该来源！${RESET}"
     read -p "确认继续吗？[Y/n]: " confirm
     if [[ -z "$confirm" || "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        echo -e "${YELLOW}正在调用老王一键工具箱...${RESET}"
-        bash <(curl -fsSL "${LAOWANG_URL}")
+        eval "$cmd"
     else
         echo -e "${YELLOW}已取消。${RESET}"
-        pause
-    fi
-}
-
-launch_keji_lion() {
-    clear
-    echo -e "${CYAN}=========================================${RESET}"
-    echo -e "        🚀 科技lion一键脚本"
-    echo -e "${CYAN}=========================================${RESET}"
-    echo -e "${RED}⚠️ 来自第三方，请确认你信任该来源！${RESET}"
-    read -p "确认继续吗？[Y/n]: " confirm
-    if [[ -z "$confirm" || "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        echo -e "${YELLOW}正在调用科技lion一键脚本...${RESET}"
-        bash <(curl -fsSL "${KEJI_LION_URL}")
-    else
-        echo -e "${YELLOW}已取消。${RESET}"
-        pause
+        sleep 1
     fi
 }
 
@@ -461,41 +450,26 @@ uninstall_nat() {
         1)
             echo -e "${RED}正在清理所有组件...${RESET}"
             if [ -f "/usr/local/bin/mtp" ]; then
-                if command -v rc-service >/dev/null 2>&1; then
-                    rc-service mtg stop >/dev/null 2>&1
-                    rc-update del mtg >/dev/null 2>&1
-                else
-                    systemctl stop mtg >/dev/null 2>&1
-                    systemctl disable mtg >/dev/null 2>&1
-                fi
-                rm -f /etc/init.d/mtg /etc/systemd/system/mtg.service
+                systemctl stop mtg >/dev/null 2>&1
+                systemctl disable mtg >/dev/null 2>&1
+                rm -f /etc/systemd/system/mtg.service
                 systemctl daemon-reload 2>/dev/null
                 pkill -f "mtg run" 2>/dev/null
                 crontab -l 2>/dev/null | grep -v "mtg run" | crontab - 2>/dev/null
                 rm -f /usr/local/bin/mtg /etc/mtg.toml /etc/mtg_info.txt /usr/local/bin/mtp
             fi
             if [ -f "/usr/local/bin/komari" ]; then
-                if command -v rc-service >/dev/null 2>&1; then
-                    rc-service komari stop >/dev/null 2>&1
-                    rc-update del komari >/dev/null 2>&1
-                else
-                    systemctl stop komari >/dev/null 2>&1
-                    systemctl disable komari >/dev/null 2>&1
-                fi
-                rm -f /etc/init.d/komari /etc/systemd/system/komari.service
+                systemctl stop komari >/dev/null 2>&1
+                systemctl disable komari >/dev/null 2>&1
+                rm -f /etc/systemd/system/komari.service
                 systemctl daemon-reload 2>/dev/null
                 pkill -f "komari" 2>/dev/null
                 rm -rf /opt/komari /usr/local/bin/komari
             fi
             if [ -f "/usr/local/bin/s5" ]; then
-                if command -v rc-service >/dev/null 2>&1; then
-                    rc-service danted stop >/dev/null 2>&1
-                    rc-update del danted >/dev/null 2>&1
-                else
-                    systemctl stop danted >/dev/null 2>&1
-                    systemctl disable danted >/dev/null 2>&1
-                fi
-                rm -f /etc/init.d/danted /etc/danted.conf /etc/s5_info.txt /usr/local/bin/s5 /var/log/danted.log
+                systemctl stop danted >/dev/null 2>&1
+                systemctl disable danted >/dev/null 2>&1
+                rm -f /etc/danted.conf /etc/s5_info.txt /usr/local/bin/s5 /var/log/danted.log
             fi
             echo -e "${YELLOW}提示: 如果安装了 Lucky，请输入 lucky_uninstall 卸载。${RESET}"
             rm -f /usr/local/bin/n "$IP_FILE" "$PORTS_FILE"
@@ -538,11 +512,9 @@ while true; do
     echo -e "${CYAN}-----------------------------------------${RESET}"
     echo -e "  ${CYAN}u.${RESET} 更新主控脚本"
     echo -e "  ${RED}x.${RESET} 卸载工具箱"
-    echo -e "  ${GREEN}0.${RESET} 退出"
-    echo -e "${CYAN}========================================
+    echo -e "  ${GREEN}0.${RESET} 退出面板"
     echo -e "${CYAN}=========================================${RESET}"
-    
-    read -p "请输入选择: " choice
+    read -p "请输入你的选择: " choice
     
     case "$choice" in
         1) show_sys_info ;;
@@ -553,20 +525,16 @@ while true; do
         6) launch_komari ;;
         7) launch_s5 ;;
         8) launch_lucky ;;
-        9) launch_laowang ;;
-        10) launch_keji_lion ;;
+        9) run_external "老王一键工具箱" "bash <(curl -fsSL ssh_tool.eooce.com)" ;;
+        10) run_external "科技lion一键脚本" "bash <(curl -sL kejilion.sh)" ;;
         u|U) update_nat ;;
         x|X) uninstall_nat ;;
-        0) exit 0 ;;
-        *) echo -e "${RED}输入错误！${RESET}"; sleep 1 ;;
+        0) clear; exit 0 ;;
+        *) echo -e "${RED}输入错误，请重新选择！${RESET}"; sleep 1 ;;
     esac
 done
 EOF
 
 chmod +x /usr/local/bin/n
-echo -e "${GREEN}✅ 主控脚本安装完成！${RESET}"
-echo -e "${CYAN}=========================================${RESET}"
-echo -e "快速启动命令: ${YELLOW}n${RESET}"
-echo -e "${CYAN}=========================================${RESET}"
-
-/usr/local/bin/n
+echo -e "${GREEN}✅ 脚本已安装完成！${RESET}"
+n
