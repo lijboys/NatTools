@@ -8,7 +8,7 @@ CYAN="\033[36m"
 BLUE="\033[34m"
 RESET="\033[0m"
 
-SCRIPT_VERSION="v1.3.0"
+SCRIPT_VERSION="v1.4.0"
 CONF_FILE="/etc/danted.conf"
 INFO_FILE="/etc/s5_info.txt"
 SERVICE_NAME="danted"
@@ -88,17 +88,17 @@ install_deps() {
   local pkg_mgr=$(detect_pkg_manager)
   case "$pkg_mgr" in
     apk)
-      apk add --no-cache dante-server curl >/dev/null 2>&1
+      apk add --no-cache dante-server curl shadow >/dev/null 2>&1
       ;;
     apt)
       apt update -y >/dev/null 2>&1
-      apt install -y dante-server >/dev/null 2>&1
+      apt install -y dante-server curl passwd >/dev/null 2>&1
       ;;
     dnf)
-      dnf install -y dante-server >/dev/null 2>&1
+      dnf install -y dante-server curl shadow-utils >/dev/null 2>&1
       ;;
     yum)
-      yum install -y dante-server >/dev/null 2>&1
+      yum install -y dante-server curl shadow-utils >/dev/null 2>&1
       ;;
     *)
       echo -e "${RED}❌ 不支持的系统包管理器${RESET}"
@@ -117,73 +117,56 @@ format_host_for_url() {
   fi
 }
 
+ensure_nobody_user() {
+  if ! id nobody >/dev/null 2>&1; then
+    if command -v useradd >/dev/null 2>&1; then
+      useradd -r -s /usr/sbin/nologin nobody 2>/dev/null || useradd -r -s /sbin/nologin nobody 2>/dev/null || true
+    fi
+  fi
+}
+
 write_conf() {
   local iface="$1"
   local port="$2"
   local ip_type="$3"
 
-  if [ "$ip_type" = "6" ]; then
-    cat > "$CONF_FILE" <<EOT
-logoutput: /var/log/danted.log
-internal: :: port = ${port}
-external: ${iface}
-
-socksmethod: username
+  cat > "$CONF_FILE" <<EOT
+logoutput: ${LOG_FILE}
 user.privileged: root
 user.unprivileged: nobody
+socksmethod: username
+clientmethod: none
+external: ${iface}
+EOT
+
+  if [ "$ip_type" = "6" ]; then
+    cat >> "$CONF_FILE" <<EOT
+internal: :: port = ${port}
 
 client pass {
   from: ::/0 to: ::/0
-  log: connect error
-}
-
-client block {
-  from: ::/0 to: ::/0
-  log: error
+  log: error connect disconnect
 }
 
 socks pass {
   from: ::/0 to: ::/0
   command: bind connect udpassociate
-  socksmethod: username
-  log: connect error
-}
-
-socks block {
-  from: ::/0 to: ::/0
-  log: error
+  log: error connect disconnect
 }
 EOT
   else
-    cat > "$CONF_FILE" <<EOT
-logoutput: /var/log/danted.log
+    cat >> "$CONF_FILE" <<EOT
 internal: 0.0.0.0 port = ${port}
-external: ${iface}
-
-socksmethod: username
-user.privileged: root
-user.unprivileged: nobody
 
 client pass {
   from: 0.0.0.0/0 to: 0.0.0.0/0
-  log: connect error
-}
-
-client block {
-  from: 0.0.0.0/0 to: 0.0.0.0/0
-  log: error
+  log: error connect disconnect
 }
 
 socks pass {
   from: 0.0.0.0/0 to: 0.0.0.0/0
   command: bind connect udpassociate
-  socksmethod: username
-  log: connect error
-}
-
-socks block {
-  from: 0.0.0.0/0 to: 0.0.0.0/0
-  log: error
+  log: error connect disconnect
 }
 EOT
   fi
@@ -200,7 +183,7 @@ save_info() {
   host=$(format_host_for_url "$ip" "$ip_type")
 
   local socks5_link="socks5://${user}:${pass}@${host}:${port}"
-  local tg_link="tg://socks?server=${host}&port=${port}&user=${user}&pass=${pass}"
+  local tg_link="tg://socks?server=${ip}&port=${port}&user=${user}&pass=${pass}"
 
   cat > "$INFO_FILE" <<EOT
 IP="${ip}"
@@ -224,16 +207,6 @@ stop_service() {
     systemctl stop ${SERVICE_NAME} >/dev/null 2>&1
   fi
   sleep 1
-  if [ -f "$CONF_FILE" ]; then
-    local port
-    port=$(grep -o 'port = [0-9]*' "$CONF_FILE" | awk '{print $3}' | head -n1)
-    for i in {1..5}; do
-      if ! is_port_in_use "$port"; then
-        break
-      fi
-      sleep 1
-    done
-  fi
 }
 
 start_service() {
@@ -252,27 +225,46 @@ start_service() {
   fi
 }
 
+show_debug_on_fail() {
+  echo -e "${YELLOW}================ 调试信息开始 ================${RESET}"
+  echo -e "${CYAN}[1] 当前配置文件:${RESET}"
+  cat "$CONF_FILE" 2>/dev/null || echo "无法读取 $CONF_FILE"
+  echo ""
+
+  echo -e "${CYAN}[2] 服务最近日志:${RESET}"
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl -u ${SERVICE_NAME} -n 30 --no-pager 2>/dev/null || true
+  fi
+  tail -n 30 "$LOG_FILE" 2>/dev/null || true
+  echo ""
+
+  echo -e "${CYAN}[3] 当前监听端口:${RESET}"
+  ss -tlnp 2>/dev/null | grep -E "(:|\\])($(grep -o 'port = [0-9]*' "$CONF_FILE" 2>/dev/null | awk '{print $3}' | head -n1))\\b" || echo "未检测到监听"
+  echo -e "${YELLOW}================ 调试信息结束 ================${RESET}"
+}
+
 choose_ip_mode() {
   echo ""
   echo -e "${CYAN}--- 请选择对外使用的 IP 类型 ---${RESET}"
-  echo -e "  ${GREEN}1.${RESET} IPv4"
-  echo -e "  ${GREEN}2.${RESET} IPv6"
-  read -p "请输入序号 (回车默认 2): " ip_choice
+  echo -e "  ${GREEN}1.${RESET} IPv4 ${YELLOW}(默认)${RESET}"
+  echo -e "  ${GREEN}2.${RESET} IPv6 ${YELLOW}(实验性支持)${RESET}"
+  echo -e "${YELLOW}提示：Dante 在部分系统下 IPv6 兼容性较差，如失败建议优先尝试 IPv4。${RESET}"
+  read -p "请输入序号 (回车默认 1): " ip_choice
 
-  if [ -z "$ip_choice" ] || [ "$ip_choice" = "2" ]; then
-    IP_TYPE="6"
-    AUTO_IP=$(get_public_ip 6)
-    DISPLAY_IP=${AUTO_IP:-"获取失败，请手动输入"}
-    read -p "👉 请输入公网 IPv6 地址 (识别出: $DISPLAY_IP): " PUBLIC_IP
-    PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
-    is_valid_ipv6 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv6 地址无效！${RESET}"; return 1; }
-  elif [ "$ip_choice" = "1" ]; then
+  if [ -z "$ip_choice" ] || [ "$ip_choice" = "1" ]; then
     IP_TYPE="4"
     AUTO_IP=$(get_public_ip 4)
     DISPLAY_IP=${AUTO_IP:-"获取失败，请手动输入"}
     read -p "👉 请输入公网 IPv4 地址 (识别出: $DISPLAY_IP): " PUBLIC_IP
     PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
     is_valid_ipv4 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv4 地址无效！${RESET}"; return 1; }
+  elif [ "$ip_choice" = "2" ]; then
+    IP_TYPE="6"
+    AUTO_IP=$(get_public_ip 6)
+    DISPLAY_IP=${AUTO_IP:-"获取失败，请手动输入"}
+    read -p "👉 请输入公网 IPv6 地址 (识别出: $DISPLAY_IP): " PUBLIC_IP
+    PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
+    is_valid_ipv6 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv6 地址无效！${RESET}"; return 1; }
   else
     echo -e "${RED}❌ 输入错误！${RESET}"
     return 1
@@ -287,9 +279,9 @@ ensure_user_password() {
     echo "$user:$pass" | chpasswd
   else
     if command -v useradd >/dev/null 2>&1; then
-      useradd -M -s /usr/sbin/nologin "$user" 2>/dev/null || useradd -M -s /sbin/nologin "$user"
+      useradd -M -s /usr/sbin/nologin "$user" 2>/dev/null || useradd -M -s /sbin/nologin "$user" 2>/dev/null || useradd "$user"
     else
-      adduser -D -s /sbin/nologin "$user"
+      adduser -D -s /sbin/nologin "$user" 2>/dev/null || adduser "$user"
     fi
     echo "$user:$pass" | chpasswd
   fi
@@ -309,6 +301,7 @@ install_s5() {
 
   stop_service
   install_deps || { pause; return; }
+  ensure_nobody_user
 
   local iface port user pass
   iface=$(detect_iface)
@@ -350,6 +343,8 @@ install_s5() {
     echo -e "${YELLOW}你可以检查：${RESET}"
     echo "journalctl -u ${SERVICE_NAME} -n 50 --no-pager"
     echo "cat ${CONF_FILE}"
+    echo ""
+    show_debug_on_fail
   fi
   pause
 }
@@ -411,7 +406,7 @@ modify_s5() {
 
   echo -e "${CYAN}当前 IP 类型: IPv${old_ip_type}${RESET}"
   echo -e "  ${GREEN}1.${RESET} IPv4"
-  echo -e "  ${GREEN}2.${RESET} IPv6"
+  echo -e "  ${GREEN}2.${RESET} IPv6 ${YELLOW}(实验性支持)${RESET}"
   read -p "请选择新的 IP 类型 (回车保持当前): " new_ip_choice
 
   case "$new_ip_choice" in
@@ -446,6 +441,7 @@ modify_s5() {
     id "$old_user" >/dev/null 2>&1 && userdel "$old_user" 2>/dev/null
   fi
 
+  ensure_nobody_user
   ensure_user_password "$user" "$pass"
   write_conf "$iface" "$port" "$NEW_IP_TYPE"
 
@@ -458,6 +454,7 @@ modify_s5() {
     echo -e "${YELLOW}$(read_info SOCKS5_LINK)${RESET}"
   else
     echo -e "${RED}❌ 配置已写入，但服务启动失败！${RESET}"
+    show_debug_on_fail
   fi
   pause
 }
@@ -597,4 +594,4 @@ done
 EOF
 
 chmod +x /usr/local/bin/s5
-echo -e "\033[32m✅ IPv6 版 s5 已安装完成！\033[0m"
+echo -e "\033[32m✅ S5 脚本已更新：默认 IPv4，IPv6 实验性支持，失败自动输出调试信息。\033[0m"
