@@ -1,11 +1,6 @@
 cat > /usr/local/bin/n <<'EOF'
 #!/bin/bash
 
-# ============================================
-# SSHTools 工具箱 - NAT/VPS 多功能管理面板
-# Version: v2.2.6
-# ============================================
-
 GREEN="\033[32m"
 RED="\033[31m"
 YELLOW="\033[33m"
@@ -15,31 +10,25 @@ RESET="\033[0m"
 
 SCRIPT_VERSION="v2.2.6"
 
-# GitHub Raw 链接
 NAT_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/NooMili.sh"
 MTP_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/mtp.sh"
 KOMARI_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/komari.sh"
 SOCKS5_URL="https://raw.githubusercontent.com/lijboys/SSHTools/refs/heads/main/s5.sh"
 
-# 数据文件
 IP_FILE="/etc/.noomili_ip"
 PORTS_FILE="/etc/.noomili_ports"
 
-# Root 检查
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}请使用 root 用户运行！${RESET}"
     exit 1
 fi
 
-# ================= 通用函数 =================
-
 pause() {
     read -p "按回车键返回主菜单..."
 }
 
-# 通用公网IP获取（带超时和多源）
 get_public_ip() {
-    local ip_type=$1  # 4 或 6
+    local ip_type=$1
     local sources=()
     if [ "$ip_type" = "4" ]; then
         sources=("ipv4.icanhazip.com" "api.ipify.org" "ifconfig.me")
@@ -58,7 +47,6 @@ get_public_ip() {
     return 1
 }
 
-# 安装主控快捷键 n
 install_shortcut() {
     if [ ! -f "/usr/local/bin/n" ]; then
         if curl -fsSL --connect-timeout 10 "${NAT_URL}" -o /usr/local/bin/n 2>/dev/null; then
@@ -70,14 +58,11 @@ install_shortcut() {
 }
 install_shortcut
 
-# ================= 系统基础功能 =================
-
 show_sys_info() {
     clear
     echo -e "${CYAN}====================================================${RESET}"
     echo -e "                 🖥️  系统核心信息看板"
     echo -e "${CYAN}====================================================${RESET}"
-    echo -e "${YELLOW}正在探测各项硬件与网络指标，请稍候...${RESET}"
     
     OS_NAME=$(grep -w "PRETTY_NAME" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
     [ -z "$OS_NAME" ] && OS_NAME="Unknown OS"
@@ -292,8 +277,6 @@ clean_system() {
     pause
 }
 
-# ================= NAT 信息卡 =================
-
 nat_info_card() {
     clear
     echo -e "${CYAN}====================================================${RESET}"
@@ -335,18 +318,8 @@ nat_info_card() {
     done
     
     echo -e "${CYAN}====================================================${RESET}"
-    echo -e "${YELLOW} 一键复制格式（可粘贴到笔记）:${RESET}"
-    echo ""
-    echo "  主机: $HOSTNAME_INFO"
-    echo "  IPv4: $CARD_IPV4"
-    echo "  IPv6: $CARD_IPV6"
-    echo "  端口: $CARD_PORTS"
-    echo ""
-    echo -e "${CYAN}====================================================${RESET}"
     pause
 }
-
-# ================= 业务与外部脚本 =================
 
 launch_mtp() {
     if [ ! -f "/usr/local/bin/mtp" ]; then
@@ -415,22 +388,6 @@ launch_lucky() {
         echo -e "${YELLOW}已取消安装。${RESET}"
     fi
     pause
-}
-
-# 第三方外部脚本 → 默认 Y（直接回车就执行）
-run_external() {
-    local name=$1
-    local cmd=$2
-    clear
-    echo -e "${YELLOW}即将执行外部脚本: ${CYAN}$name${RESET}"
-    echo -e "${RED}⚠️ 来自第三方，请确认你信任该来源！${RESET}"
-    read -p "确认继续吗？[Y/n]: " confirm
-    if [[ -z "$confirm" || "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        eval "$cmd"
-    else
-        echo -e "${YELLOW}已取消。${RESET}"
-        sleep 1
-    fi
 }
 
 update_nat() {
@@ -518,7 +475,6 @@ uninstall_nat() {
     esac
 }
 
-# ================= 主菜单 =================
 while true; do
     clear
     echo -e "${CYAN} _    _             __  __ _ _ _ ${RESET}"
@@ -541,7 +497,29 @@ while true; do
     echo -e "  ${GREEN}7.${RESET} 进入 SOCKS5 管理面板"
     echo -e "  ${GREEN}8.${RESET} 🛡️ 安装 SSL 面板 (Lucky)"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${YELLOW}9.${RESET} 老王一键工具箱"
-    echo -e "  ${YELLOW}10.${RESET} 科技lion一键脚本"
-    echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${CYAN}u.${RESET}
+    echo -e "  ${YELLOW}u.${RESET} 更新主控脚本"
+    echo -e "  ${RED}x.${RESET} 卸载工具箱"
+    echo -e "  ${GREEN}0.${RESET} 退出"
+    echo -e "${CYAN}=========================================${RESET}"
+    
+    read -p "请输入选择: " choice
+    
+    case "$choice" in
+        1) show_sys_info ;;
+        2) update_system ;;
+        3) clean_system ;;
+        4) nat_info_card ;;
+        5) launch_mtp ;;
+        6) launch_komari ;;
+        7) launch_s5 ;;
+        8) launch_lucky ;;
+        u|U) update_nat ;;
+        x|X) uninstall_nat ;;
+        0) exit 0 ;;
+        *) echo -e "${RED}输入错误！${RESET}"; sleep 1 ;;
+    esac
+done
+EOF
+
+chmod +x /usr/local/bin/n
+echo -e "${GREEN}✅ 主控脚本已修复！${RESET}"
