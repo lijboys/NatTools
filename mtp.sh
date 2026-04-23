@@ -1,9 +1,9 @@
-cat > /usr/local/bin/mtp <<'EOFMTP'
+cat > /usr/local/bin/mtp <<'EOF'
 #!/bin/bash
 
 # ============================================
 # MTP 代理管理面板
-# Version: v1.2.3
+# Version: v1.3.0 (IPv6 支持版)
 # ============================================
 
 GREEN="\033[32m"
@@ -13,7 +13,7 @@ CYAN="\033[36m"
 BLUE="\033[34m"
 RESET="\033[0m"
 
-SCRIPT_VERSION="v1.2.3"
+SCRIPT_VERSION="v1.3.0"
 MTG_VERSION="2.1.7"
 
 CONFIG_FILE="/etc/mtg.toml"
@@ -34,7 +34,6 @@ pause() {
     read -p "按回车键返回主菜单..."
 }
 
-# ================= 基础检测 =================
 check_dependencies() {
     local missing=()
     for cmd in curl tar grep awk sed pgrep ss; do
@@ -54,6 +53,7 @@ detect_arch() {
 }
 
 is_valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+
 is_valid_ipv4() {
     local ip=$1
     [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
@@ -63,6 +63,14 @@ is_valid_ipv4() {
     done
     return 0
 }
+
+is_valid_ipv6() {
+    local ip=$1
+    [[ "$ip" =~ : ]] || return 1
+    [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] || return 1
+    return 0
+}
+
 is_valid_domain() { [[ "$1" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; }
 is_port_in_use() { ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1$"; }
 
@@ -80,15 +88,41 @@ get_status() {
 }
 
 get_public_ip() {
-    local temp_ip
-    temp_ip=$(curl -s4m3 --connect-timeout 3 ipv4.icanhazip.com 2>/dev/null)
-    [ -z "$temp_ip" ] && temp_ip=$(curl -s4m3 --connect-timeout 3 api.ipify.org 2>/dev/null)
-    [ -z "$temp_ip" ] && temp_ip=$(curl -s4m3 --connect-timeout 3 ifconfig.me 2>/dev/null)
-    is_valid_ipv4 "$temp_ip" && echo "$temp_ip" || echo ""
+    local ip_type="${1:-4}"
+    local temp_ip=""
+    if [ "$ip_type" = "6" ]; then
+        temp_ip=$(curl -s6m3 --connect-timeout 3 ipv6.icanhazip.com 2>/dev/null)
+        [ -z "$temp_ip" ] && temp_ip=$(curl -s6m3 --connect-timeout 3 api6.ipify.org 2>/dev/null)
+        [ -z "$temp_ip" ] && temp_ip=$(curl -s6m3 --connect-timeout 3 ifconfig.co 2>/dev/null)
+        is_valid_ipv6 "$temp_ip" && echo "$temp_ip" || echo ""
+    else
+        temp_ip=$(curl -s4m3 --connect-timeout 3 ipv4.icanhazip.com 2>/dev/null)
+        [ -z "$temp_ip" ] && temp_ip=$(curl -s4m3 --connect-timeout 3 api.ipify.org 2>/dev/null)
+        [ -z "$temp_ip" ] && temp_ip=$(curl -s4m3 --connect-timeout 3 ifconfig.me 2>/dev/null)
+        is_valid_ipv4 "$temp_ip" && echo "$temp_ip" || echo ""
+    fi
+}
+
+format_tg_server() {
+    local ip="$1"
+    local ip_type="$2"
+    if [ "$ip_type" = "6" ]; then
+        echo "[${ip}]"
+    else
+        echo "$ip"
+    fi
 }
 
 write_info_file() {
-    local in_port="$1" public_ip="$2" out_port="$3" fake_domain="$4" secret="$5" tg_link="$6"
+    local in_port="$1"
+    local public_ip="$2"
+    local out_port="$3"
+    local fake_domain="$4"
+    local secret="$5"
+    local tg_link="$6"
+    local ip_type="$7"
+    local bind_addr="$8"
+
     cat > "$INFO_FILE" <<EOT
 IN_PORT="${in_port}"
 PUBLIC_IP="${public_ip}"
@@ -96,31 +130,38 @@ OUT_PORT="${out_port}"
 FAKE_DOMAIN="${fake_domain}"
 SECRET="${secret}"
 TG_LINK="${tg_link}"
+IP_TYPE="${ip_type}"
+BIND_ADDR="${bind_addr}"
 EOT
 }
 
 write_config_file() {
-    local in_port="$1" secret="$2"
+    local in_port="$1"
+    local secret="$2"
+    local bind_addr="$3"
+
     cat > "$CONFIG_FILE" <<EOT
 secret = "${secret}"
-bind-to = "0.0.0.0:${in_port}"
+bind-to = "${bind_addr}"
 EOT
 }
 
-# ================= 守护脚本 =================
 create_guard_script() {
-    cat > "$GUARD_FILE" <<'EOF'
+    cat > "$GUARD_FILE" <<'EOG'
 #!/bin/sh
 while true; do
     /usr/local/bin/mtg run /etc/mtg.toml >> /var/log/mtg.log 2>&1
     echo "$(date '+%F %T') mtg exited, restarting in 2s..." >> /var/log/mtg_guard.log
     sleep 2
 done
-EOF
+EOG
     chmod +x "$GUARD_FILE"
 }
 
-# ================= 增强停止（解决重装时端口占用） =================
+extract_bind_port() {
+    grep '^bind-to = ' "$CONFIG_FILE" 2>/dev/null | sed -E 's/.*:([0-9]+)".*/\1/' | head -n1
+}
+
 stop_mtg_service() {
     if command -v systemctl >/dev/null 2>&1; then
         systemctl stop mtg >/dev/null 2>&1
@@ -128,9 +169,9 @@ stop_mtg_service() {
         pkill -9 -f "/usr/local/bin/mtg_guard.sh" 2>/dev/null || true
         pkill -9 -f "mtg run" 2>/dev/null || true
         sleep 2
-        # 等待端口彻底释放（最多等 8 秒）
         if [ -f "$CONFIG_FILE" ]; then
-            local port=$(grep -o 'bind-to = "0.0.0.0:[0-9]*"' "$CONFIG_FILE" | cut -d: -f2 | tr -d '"')
+            local port
+            port=$(extract_bind_port)
             for i in {1..8}; do
                 if ! is_port_in_use "$port"; then
                     break
@@ -141,7 +182,6 @@ stop_mtg_service() {
     fi
 }
 
-# ================= 启动（无 systemd 使用 guard） =================
 start_mtg_service() {
     if command -v systemctl >/dev/null 2>&1; then
         mkdir -p /etc/systemd/system/
@@ -149,11 +189,13 @@ start_mtg_service() {
 [Unit]
 Description=MTG v2 Proxy
 After=network.target
+
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/mtg run ${CONFIG_FILE}
 Restart=always
 RestartSec=3
+
 [Install]
 WantedBy=multi-user.target
 EOT
@@ -209,6 +251,7 @@ choose_and_generate_secret() {
     printf "  ${GREEN}%-4s${RESET} %-22s ${YELLOW}%-18s${RESET}  ${YELLOW}%-4s${RESET} %-22s ${RED}%s${RESET}\n" "9." "onedrive.live.com" "(微软网盘)" "10." "自定义伪装域名" "(强烈推荐)"
     echo -e "${CYAN}------------------------------------------------------${RESET}"
     read -p "请输入序号选择 (回车默认选 1): " domain_choice
+
     case "$domain_choice" in
         2) FAKE_DOMAIN="www.microsoft.com" ;;
         3) FAKE_DOMAIN="www.apple.com" ;;
@@ -225,6 +268,7 @@ choose_and_generate_secret() {
             ;;
         *) FAKE_DOMAIN="www.cloudflare.com" ;;
     esac
+
     [ ! -x "/usr/local/bin/mtg" ] && { echo -e "${RED}❌ mtg 核心不存在！${RESET}"; return 1; }
     echo -e "${YELLOW}正在动态生成专属伪装密钥...${RESET}"
     SECRET=$(/usr/local/bin/mtg generate-secret "${FAKE_DOMAIN}" 2>/dev/null)
@@ -233,40 +277,73 @@ choose_and_generate_secret() {
     return 0
 }
 
-# ================= 业务功能 =================
+choose_ip_mode() {
+    echo ""
+    echo -e "${CYAN}--- 请选择对外使用的 IP 类型 ---${RESET}"
+    echo -e "  ${GREEN}1.${RESET} IPv4"
+    echo -e "  ${GREEN}2.${RESET} IPv6"
+    read -p "请输入序号 (回车默认 2): " ip_choice
+
+    if [ -z "$ip_choice" ] || [ "$ip_choice" = "2" ]; then
+        IP_TYPE="6"
+        AUTO_IP=$(get_public_ip 6)
+        DISPLAY_IP=${AUTO_IP:-"获取失败，请手动输入"}
+        BIND_ADDR="[::]:${IN_PORT}"
+        read -p "👉 请输入公网 IPv6 地址 (识别出: $DISPLAY_IP): " PUBLIC_IP
+        PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
+        is_valid_ipv6 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv6 地址无效！${RESET}"; return 1; }
+    elif [ "$ip_choice" = "1" ]; then
+        IP_TYPE="4"
+        AUTO_IP=$(get_public_ip 4)
+        DISPLAY_IP=${AUTO_IP:-"获取失败，请手动输入"}
+        BIND_ADDR="0.0.0.0:${IN_PORT}"
+        read -p "👉 请输入公网 IPv4 地址 (识别出: $DISPLAY_IP): " PUBLIC_IP
+        PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
+        is_valid_ipv4 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv4 地址无效！${RESET}"; return 1; }
+    else
+        echo -e "${RED}❌ 输入错误！${RESET}"
+        return 1
+    fi
+    return 0
+}
+
 install_mtp() {
     clear
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "${CYAN}  🚀 开始部署 mtg v2 伪装代理${RESET}"
     echo -e "${CYAN}=========================================${RESET}"
+
     check_dependencies || { pause; return; }
+
     if [ -f "/usr/local/bin/mtg" ] && [ -f "$INFO_FILE" ]; then
         echo -e "${YELLOW}⚠️ 检测到当前机器已经安装了 MTP 代理服务！${RESET}"
         read -p "👉 是否要继续【覆盖重装】并清除原有配置？[y/N]: " confirm_reinstall
         [[ "$confirm_reinstall" != "y" && "$confirm_reinstall" != "Y" ]] && { echo -e "${GREEN}✅ 已取消安装。${RESET}"; sleep 1; return; }
     fi
+
     stop_mtg_service
     download_mtg || { pause; return; }
-    AUTO_IP=$(get_public_ip)
-    DISPLAY_IP=${AUTO_IP:-"获取失败，请手动输入"}
+
     echo ""
     echo -e "${CYAN}--- 请选择你的机器网络环境 ---${RESET}"
     echo -e "  ${GREEN}1.${RESET} NAT 小鸡 (仅开放部分映射端口) [默认]"
     echo -e "  ${YELLOW}2.${RESET} 独立 VPS (拥有独立公网 IP，全端口开放)"
     read -p "请输入序号 (回车默认选 1): " net_choice
     echo ""
+
     if [ -z "$net_choice" ] || [ "$net_choice" = "1" ]; then
         echo -e "${YELLOW}💡 提示: NAT 机器请确认商家后台映射端口。${RESET}"
         read -p "👉 1. 请输入【公网/外网可用端口】(回车默认 10086): " OUT_PORT
         OUT_PORT=${OUT_PORT:-10086}
         is_valid_port "$OUT_PORT" || { echo -e "${RED}❌ 公网端口无效！${RESET}"; pause; return; }
+
         read -p "👉 2. 请输入【内网监听端口】(回车默认与外网一致: $OUT_PORT): " IN_PORT
         IN_PORT=${IN_PORT:-$OUT_PORT}
         is_valid_port "$IN_PORT" || { echo -e "${RED}❌ 内网监听端口无效！${RESET}"; pause; return; }
         is_port_in_use "$IN_PORT" && { echo -e "${RED}❌ 监听端口 ${IN_PORT} 已被占用！${RESET}"; pause; return; }
-        read -p "👉 3. 请输入商家【公网 IPv4 地址】(识别出: $DISPLAY_IP): " PUBLIC_IP
-        PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
-        is_valid_ipv4 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv4 地址无效！${RESET}"; pause; return; }
+
+        choose_ip_mode || { pause; return; }
+
         echo -e "   ${GREEN}✅ NAT 节点配置完成 -> IP: ${PUBLIC_IP} | 内网端口: ${IN_PORT} | 外网端口: ${OUT_PORT}${RESET}"
     elif [ "$net_choice" = "2" ]; then
         echo -e "${YELLOW}💡 提示: 独立 VPS 推荐使用 443 端口。${RESET}"
@@ -274,24 +351,33 @@ install_mtp() {
         IN_PORT=${IN_PORT:-443}
         is_valid_port "$IN_PORT" || { echo -e "${RED}❌ 端口无效！${RESET}"; pause; return; }
         is_port_in_use "$IN_PORT" && { echo -e "${RED}❌ 端口 ${IN_PORT} 已被占用！${RESET}"; pause; return; }
+
         OUT_PORT=$IN_PORT
-        read -p "👉 请确认【公网 IPv4 地址】(识别出: $DISPLAY_IP): " PUBLIC_IP
-        PUBLIC_IP=${PUBLIC_IP:-$AUTO_IP}
-        is_valid_ipv4 "$PUBLIC_IP" || { echo -e "${RED}❌ 公网 IPv4 地址无效！${RESET}"; pause; return; }
+        choose_ip_mode || { pause; return; }
+
         echo -e "   ${GREEN}✅ VPS 节点配置完成 -> IP: ${PUBLIC_IP} | 端口: ${IN_PORT}${RESET}"
     else
-        echo -e "${RED}❌ 输入错误！${RESET}"; pause; return
+        echo -e "${RED}❌ 输入错误！${RESET}"
+        pause
+        return
     fi
+
     choose_and_generate_secret || { pause; return; }
-    write_config_file "$IN_PORT" "$SECRET"
+
+    write_config_file "$IN_PORT" "$SECRET" "$BIND_ADDR"
+
     if start_mtg_service; then
-        TG_LINK="tg://proxy?server=${PUBLIC_IP}&port=${OUT_PORT}&secret=${SECRET}"
-        write_info_file "$IN_PORT" "$PUBLIC_IP" "$OUT_PORT" "$FAKE_DOMAIN" "$SECRET" "$TG_LINK"
+        TG_SERVER=$(format_tg_server "$PUBLIC_IP" "$IP_TYPE")
+        TG_LINK="tg://proxy?server=${TG_SERVER}&port=${OUT_PORT}&secret=${SECRET}"
+        write_info_file "$IN_PORT" "$PUBLIC_IP" "$OUT_PORT" "$FAKE_DOMAIN" "$SECRET" "$TG_LINK" "$IP_TYPE" "$BIND_ADDR"
         echo -e "\n${GREEN}✅ 部署成功！程序已在后台监听端口 ${IN_PORT}${RESET}"
         echo -e "当前服务状态: $(get_status)"
         echo -e "你的专属 TG 链接是：\n${YELLOW}${TG_LINK}${RESET}\n"
     else
         echo -e "${RED}❌ 服务启动失败！${RESET}"
+        echo -e "${YELLOW}可执行以下命令查看原因：${RESET}"
+        echo "journalctl -u mtg -n 50 --no-pager"
+        echo "cat /etc/mtg.toml"
     fi
     pause
 }
@@ -305,9 +391,13 @@ view_link() {
         OUT_PORT=$(read_info_value OUT_PORT)
         FAKE_DOMAIN=$(read_info_value FAKE_DOMAIN)
         TG_LINK=$(read_info_value TG_LINK)
+        IP_TYPE=$(read_info_value IP_TYPE)
+        [ -z "$IP_TYPE" ] && IP_TYPE="4"
+
         echo -e "当前服务状态:     $(get_status)"
         echo -e "当前内网监听端口: ${GREEN}${IN_PORT}${RESET}"
         echo -e "当前对外公网地址: ${GREEN}${PUBLIC_IP}:${OUT_PORT}${RESET}"
+        echo -e "当前 IP 类型:     ${GREEN}IPv${IP_TYPE}${RESET}"
         echo -e "当前伪装域名:     ${GREEN}${FAKE_DOMAIN}${RESET}\n"
         echo -e "${YELLOW}👉 TG 一键直连链接：${RESET}"
         echo -e "${GREEN}${TG_LINK}${RESET}"
@@ -321,32 +411,65 @@ view_link() {
 modify_config() {
     clear
     [ ! -f "$INFO_FILE" ] && { echo -e "${RED}请先安装！${RESET}"; pause; return; }
+
     IN_PORT=$(read_info_value IN_PORT)
     PUBLIC_IP=$(read_info_value PUBLIC_IP)
     OUT_PORT=$(read_info_value OUT_PORT)
     FAKE_DOMAIN=$(read_info_value FAKE_DOMAIN)
     SECRET=$(read_info_value SECRET)
-    AUTO_IP=$(get_public_ip)
-    DISPLAY_IP=${AUTO_IP:-"获取失败"}
+    IP_TYPE=$(read_info_value IP_TYPE)
+    [ -z "$IP_TYPE" ] && IP_TYPE="4"
+
     echo -e "${CYAN}--- 修改映射与配置信息 ---${RESET}"
+
     read -p "输入新【内网监听端口】 (回车保持 ${IN_PORT}): " NEW_IN
     NEW_IN=${NEW_IN:-$IN_PORT}
     is_valid_port "$NEW_IN" || { echo -e "${RED}❌ 内网监听端口无效！${RESET}"; pause; return; }
     [ "$NEW_IN" != "$IN_PORT" ] && is_port_in_use "$NEW_IN" && { echo -e "${RED}❌ 端口已被占用！${RESET}"; pause; return; }
-    echo -e "${YELLOW}当前机器识别到的外部 IP 为: ${DISPLAY_IP}${RESET}"
-    read -p "输入新【公网 IP】 (回车保持 ${PUBLIC_IP}): " NEW_IP
-    NEW_IP=${NEW_IP:-$PUBLIC_IP}
-    is_valid_ipv4 "$NEW_IP" || { echo -e "${RED}❌ 公网 IP 格式无效！${RESET}"; pause; return; }
+
     read -p "输入新【公网端口】 (回车保持 ${OUT_PORT}): " NEW_OUT
     NEW_OUT=${NEW_OUT:-$OUT_PORT}
     is_valid_port "$NEW_OUT" || { echo -e "${RED}❌ 公网端口无效！${RESET}"; pause; return; }
+
+    echo -e "${CYAN}当前 IP 类型: IPv${IP_TYPE}${RESET}"
+    echo -e "  ${GREEN}1.${RESET} IPv4"
+    echo -e "  ${GREEN}2.${RESET} IPv6"
+    read -p "请选择新的 IP 类型 (回车保持当前): " new_ip_choice
+
+    case "$new_ip_choice" in
+        1) NEW_IP_TYPE="4" ;;
+        2) NEW_IP_TYPE="6" ;;
+        *) NEW_IP_TYPE="$IP_TYPE" ;;
+    esac
+
+    if [ "$NEW_IP_TYPE" = "6" ]; then
+        AUTO_IP=$(get_public_ip 6)
+        DISPLAY_IP=${AUTO_IP:-"获取失败"}
+        echo -e "${YELLOW}当前机器识别到的 IPv6 为: ${DISPLAY_IP}${RESET}"
+        read -p "输入新【公网 IPv6】 (回车保持 ${PUBLIC_IP}): " NEW_IP
+        NEW_IP=${NEW_IP:-$PUBLIC_IP}
+        is_valid_ipv6 "$NEW_IP" || { echo -e "${RED}❌ 公网 IPv6 格式无效！${RESET}"; pause; return; }
+        NEW_BIND_ADDR="[::]:${NEW_IN}"
+    else
+        AUTO_IP=$(get_public_ip 4)
+        DISPLAY_IP=${AUTO_IP:-"获取失败"}
+        echo -e "${YELLOW}当前机器识别到的 IPv4 为: ${DISPLAY_IP}${RESET}"
+        read -p "输入新【公网 IPv4】 (回车保持 ${PUBLIC_IP}): " NEW_IP
+        NEW_IP=${NEW_IP:-$PUBLIC_IP}
+        is_valid_ipv4 "$NEW_IP" || { echo -e "${RED}❌ 公网 IPv4 格式无效！${RESET}"; pause; return; }
+        NEW_BIND_ADDR="0.0.0.0:${NEW_IN}"
+    fi
+
     echo -e "当前伪装域名为: ${GREEN}${FAKE_DOMAIN}${RESET}"
     read -p "按 1 重新设置伪装域名，按回车保持不变: " change_domain
     [ "$change_domain" = "1" ] && choose_and_generate_secret
-    write_config_file "$NEW_IN" "$SECRET"
+
+    write_config_file "$NEW_IN" "$SECRET" "$NEW_BIND_ADDR"
+
     if start_mtg_service; then
-        TG_LINK="tg://proxy?server=${NEW_IP}&port=${NEW_OUT}&secret=${SECRET}"
-        write_info_file "$NEW_IN" "$NEW_IP" "$NEW_OUT" "$FAKE_DOMAIN" "$SECRET" "$TG_LINK"
+        TG_SERVER=$(format_tg_server "$NEW_IP" "$NEW_IP_TYPE")
+        TG_LINK="tg://proxy?server=${TG_SERVER}&port=${NEW_OUT}&secret=${SECRET}"
+        write_info_file "$NEW_IN" "$NEW_IP" "$NEW_OUT" "$FAKE_DOMAIN" "$SECRET" "$TG_LINK" "$NEW_IP_TYPE" "$NEW_BIND_ADDR"
         echo -e "${GREEN}✅ 配置已更新并重启成功！${RESET}"
     else
         echo -e "${RED}❌ 配置已写入，但服务启动失败！${RESET}"
@@ -395,6 +518,7 @@ uninstall_mtp() {
     echo -e "${RED}你正在执行 MTP 卸载操作！${RESET}"
     read -p "确认彻底卸载 mtg + 面板吗？[y/N]: " confirm_uninstall
     [[ "$confirm_uninstall" != "y" && "$confirm_uninstall" != "Y" ]] && { echo -e "${YELLOW}已取消卸载。${RESET}"; sleep 1; return; }
+
     echo -e "${RED}正在卸载...${RESET}"
     if command -v systemctl >/dev/null 2>&1; then
         systemctl stop mtg >/dev/null 2>&1
@@ -406,6 +530,7 @@ uninstall_mtp() {
         pkill -9 -f "mtg run" 2>/dev/null
         crontab -l 2>/dev/null | grep -v -E "mtg_guard.sh|mtg run ${CONFIG_FILE}" | crontab -
     fi
+
     rm -f /usr/local/bin/mtg "$CONFIG_FILE" "$INFO_FILE" /usr/local/bin/mtp "$LOG_FILE" "$GUARD_FILE" "$GUARD_LOG"
     echo -e "${GREEN}✅ 卸载完成！${RESET}"
     sleep 2
@@ -417,6 +542,7 @@ update_script() {
     echo -e "${YELLOW}正在从 GitHub 拉取最新面板代码...${RESET}"
     local tmp_file
     tmp_file=$(mktemp)
+
     if curl -fsSL --connect-timeout 10 "${SCRIPT_URL}" -o "$tmp_file" 2>/dev/null; then
         sed -i 's/\r$//' "$tmp_file"
         if bash -n "$tmp_file" 2>/dev/null; then
@@ -438,36 +564,35 @@ update_script() {
     pause
 }
 
-# 首次安装快捷命令
 if [ ! -f "/usr/local/bin/mtp" ]; then
     curl -fsSL --connect-timeout 10 "${SCRIPT_URL}" -o /usr/local/bin/mtp 2>/dev/null && chmod +x /usr/local/bin/mtp
 fi
 
-# ================= 主菜单 =================
 while true; do
     clear
     if [ -f "$INFO_FILE" ]; then
-        CURRENT_NODE_NAME=$(read_info_value NODE_NAME)
         CURRENT_PUBLIC_IP=$(read_info_value PUBLIC_IP)
         CURRENT_OUT_PORT=$(read_info_value OUT_PORT)
-        [ -z "$CURRENT_NODE_NAME" ] && CURRENT_NODE_NAME="未设置"
+        CURRENT_IP_TYPE=$(read_info_value IP_TYPE)
+        [ -z "$CURRENT_IP_TYPE" ] && CURRENT_IP_TYPE="4"
     else
-        CURRENT_NODE_NAME="未安装"
         CURRENT_PUBLIC_IP="-"
         CURRENT_OUT_PORT="-"
+        CURRENT_IP_TYPE="-"
     fi
+
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "   🦇 MTP 代理管理面板 ${GREEN}${SCRIPT_VERSION}${RESET}"
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "当前状态: ${RESET}$(get_status)"
-    echo -e "节点备注: ${GREEN}${CURRENT_NODE_NAME}${RESET}"
     echo -e "当前地址: ${YELLOW}${CURRENT_PUBLIC_IP}:${CURRENT_OUT_PORT}${RESET}"
+    echo -e "IP 类型:  ${GREEN}IPv${CURRENT_IP_TYPE}${RESET}"
     echo -e "快捷指令: ${GREEN}mtp${RESET}"
     echo -e "MTG版本:  ${YELLOW}v${MTG_VERSION}${RESET}"
     echo -e "${CYAN}-----------------------------------------${RESET}"
-    echo -e "  ${GREEN}1.${RESET} 安装 / 重装 MTP (自动适配网络环境)"
+    echo -e "  ${GREEN}1.${RESET} 安装 / 重装 MTP (支持 IPv4 / IPv6)"
     echo -e "  ${GREEN}2.${RESET} 查看当前 TG 链接与信息"
-    echo -e "  ${GREEN}3.${RESET} 修改端口、IP、备注名与伪装域名"
+    echo -e "  ${GREEN}3.${RESET} 修改端口、IP 与伪装域名"
     echo -e "  ${YELLOW}4.${RESET} 启动 MTP 服务"
     echo -e "  ${YELLOW}5.${RESET} 停止 MTP 服务"
     echo -e "  ${CYAN}6.${RESET} 重启 MTP 服务"
@@ -478,6 +603,7 @@ while true; do
     echo -e "  ${YELLOW}00.${RESET} 返回主菜单 (NooMili)"
     echo -e "${CYAN}=========================================${RESET}"
     read -p "请输入序号选择功能: " choice
+
     case "$choice" in
         1) install_mtp ;;
         2) view_link ;;
@@ -493,8 +619,7 @@ while true; do
         *) echo -e "${RED}输入错误！${RESET}"; sleep 1 ;;
     esac
 done
-EOFMTP
+EOF
 
 chmod +x /usr/local/bin/mtp
-echo -e "${GREEN}✅ v1.2.3 已安装完成！${RESET}"
-echo -e "现在执行 ${CYAN}mtp${RESET} 进入面板，选择 1 重装即可（端口不会再被占用）。"
+echo -e "\033[32m✅ IPv6 版 MTP 已安装完成！\033[0m"
