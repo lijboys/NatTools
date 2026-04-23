@@ -1,3 +1,4 @@
+cat > /usr/local/bin/n <<'EOF'
 #!/bin/bash
 
 # ============================================
@@ -37,7 +38,7 @@ pause() {
 get_public_ip() {
     local ip_type=$1
     local sources=()
-    
+
     if [ "$ip_type" = "6" ]; then
         sources=("ipv6.icanhazip.com" "api6.ipify.org" "ifconfig.co")
         for src in "${sources[@]}"; do
@@ -79,7 +80,7 @@ show_sys_info() {
     echo -e "                 🖥️  系统核心信息看板"
     echo -e "${CYAN}====================================================${RESET}"
     echo -e "${YELLOW}正在探测各项硬件与网络指标，请稍候...${RESET}"
-    
+
     OS_NAME=$(grep -w "PRETTY_NAME" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
     [ -z "$OS_NAME" ] && OS_NAME="Unknown OS"
     KERNEL_VER=$(uname -r)
@@ -87,18 +88,18 @@ show_sys_info() {
     UPTIME=$(uptime -p 2>/dev/null | sed 's/up //')
     [ -z "$UPTIME" ] && UPTIME=$(uptime | awk -F'( |,|:)+' '{print $6,$7",",$8,"hours,",$9,"minutes"}')
     LOAD_AVG=$(awk '{print $1, $2, $3}' /proc/loadavg)
-    
+
     if command -v systemd-detect-virt >/dev/null 2>&1; then
         VIRT_TYPE=$(systemd-detect-virt 2>/dev/null)
         [ -z "$VIRT_TYPE" ] && VIRT_TYPE="none"
     else
         VIRT_TYPE="未知"
     fi
-    
+
     CPU_MODEL=$(awk -F': ' '/model name/ {print $2; exit}' /proc/cpuinfo)
     CPU_CORES=$(nproc)
     [ -z "$CPU_MODEL" ] && CPU_MODEL="Virtual CPU (未识别)"
-    
+
     MEM_INFO=$(free -m | grep Mem)
     MEM_TOTAL=$(echo "$MEM_INFO" | awk '{print $2}')
     MEM_USED=$(echo "$MEM_INFO" | awk '{print $3}')
@@ -107,20 +108,20 @@ show_sys_info() {
     else
         MEM_PERCENT="0.0"
     fi
-    
+
     SWAP_INFO=$(free -m | grep Swap)
     SWAP_TOTAL=$(echo "$SWAP_INFO" | awk '{print $2}')
     SWAP_USED=$(echo "$SWAP_INFO" | awk '{print $3}')
-    
+
     DISK_INFO=$(df -h / | tail -n 1)
     DISK_TOTAL=$(echo "$DISK_INFO" | awk '{print $2}')
     DISK_USED=$(echo "$DISK_INFO" | awk '{print $3}')
     DISK_PERCENT=$(echo "$DISK_INFO" | awk '{print $5}')
-    
+
     LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
     [ -z "$LOCAL_IP" ] && LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     [ -z "$LOCAL_IP" ] && LOCAL_IP="未分配"
-    
+
     if [ -f "$IP_FILE" ]; then
         SAVED_IP=$(cat "$IP_FILE")
         SAVED_TYPE=$(cat "$IP_TYPE_FILE" 2>/dev/null || echo "4")
@@ -143,7 +144,7 @@ show_sys_info() {
         else
             IPV4="${RED}获取失败${RESET}"
         fi
-        
+
         IPV6_RAW=$(get_public_ip 6)
         if [[ "$IPV6_RAW" =~ ^[0-9a-fA-F:]+:[0-9a-fA-F:]+ ]]; then
             IPV6="$IPV6_RAW"
@@ -151,13 +152,13 @@ show_sys_info() {
             IPV6="未分配或无 IPv6"
         fi
     fi
-    
+
     if [ -f "$PORTS_FILE" ]; then
         NAT_PORTS=$(cat "$PORTS_FILE")
     else
         NAT_PORTS="${YELLOW}未设置 (按 p 设置)${RESET}"
     fi
-    
+
     NET_IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
     TRAFFIC_INFO=""
     if [ -n "$NET_IFACE" ] && [ -d "/sys/class/net/$NET_IFACE" ]; then
@@ -169,7 +170,7 @@ show_sys_info() {
             TRAFFIC_INFO="↓${RX_GB}GB ↑${TX_GB}GB"
         fi
     fi
-    
+
     clear
     echo -e "${CYAN}====================================================${RESET}"
     echo -e " 💻 ${GREEN}系统 OS:${RESET}    $OS_NAME ($ARCH)"
@@ -194,7 +195,7 @@ show_sys_info() {
     echo -e "${CYAN}====================================================${RESET}"
     echo -e "${YELLOW}操作: [回车]返回 [c]校准IP [p]设置端口 [d]恢复自动${RESET}"
     read -p "请输入选择: " sub_choice
-    
+
     case "$sub_choice" in
         c|C)
             echo ""
@@ -202,7 +203,7 @@ show_sys_info() {
             echo -e "  ${GREEN}1.${RESET} IPv4"
             echo -e "  ${GREEN}2.${RESET} IPv6"
             read -p "请选择 (回车默认 1): " ip_choice
-            
+
             if [ "$ip_choice" = "2" ]; then
                 read -p "👉 请输入控制面板看到的真实 IPv6: " user_ip
                 if [[ "$user_ip" =~ ^[0-9a-fA-F:]+$ ]]; then
@@ -259,7 +260,7 @@ update_system() {
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "          🔄 正在执行全自动系统更新"
     echo -e "${CYAN}=========================================${RESET}"
-    
+
     if command -v apt-get >/dev/null 2>&1; then
         echo -e "${YELLOW}检测到 Debian/Ubuntu，使用 APT 更新...${RESET}"
         export DEBIAN_FRONTEND=noninteractive
@@ -279,7 +280,7 @@ update_system() {
     else
         echo -e "${RED}未知的包管理器！请手动执行更新。${RESET}"
     fi
-    
+
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "${GREEN}✅ 系统更新完毕！${RESET}"
     pause
@@ -290,14 +291,14 @@ clean_system() {
     echo -e "${CYAN}=========================================${RESET}"
     echo -e "          🧹 开始深度系统瘦身清理"
     echo -e "${CYAN}=========================================${RESET}"
-    
+
     SPACE_BEFORE=$(df / | tail -n 1 | awk '{print $3}')
-    
+
     echo -e "${YELLOW}[1/3] 清理 systemd 冗余日志...${RESET}"
     if command -v journalctl >/dev/null 2>&1; then
         journalctl --vacuum-size=50M >/dev/null 2>&1
     fi
-    
+
     echo -e "${YELLOW}[2/3] 清理软件包缓存与孤儿依赖...${RESET}"
     if command -v apt-get >/dev/null 2>&1; then
         export DEBIAN_FRONTEND=noninteractive
@@ -310,13 +311,13 @@ clean_system() {
         yum autoremove -y >/dev/null 2>&1
         yum clean all >/dev/null 2>&1
     fi
-    
+
     echo -e "${YELLOW}[3/3] 清空临时文件残余...${RESET}"
     rm -rf /tmp/* /var/tmp/* >/dev/null 2>&1
-    
+
     SPACE_AFTER=$(df / | tail -n 1 | awk '{print $3}')
     FREED_KB=$((SPACE_BEFORE - SPACE_AFTER))
-    
+
     echo -e "${CYAN}=========================================${RESET}"
     if [ "$FREED_KB" -le 0 ]; then
         echo -e "${GREEN}✅ 清理完成！系统已经很干净了~${RESET}"
@@ -332,7 +333,7 @@ nat_info_card() {
     echo -e "${CYAN}====================================================${RESET}"
     echo -e "              📇 NAT 小鸡信息卡"
     echo -e "${CYAN}====================================================${RESET}"
-    
+
     if [ -f "$IP_FILE" ]; then
         CARD_IP=$(cat "$IP_FILE")
         CARD_TYPE=$(cat "$IP_TYPE_FILE" 2>/dev/null || echo "4")
@@ -342,15 +343,15 @@ nat_info_card() {
         [ -z "$CARD_IPV4" ] && CARD_IPV4="N/A"
         [ -z "$CARD_IPV6" ] && CARD_IPV6="N/A"
     fi
-    
+
     if [ -f "$PORTS_FILE" ]; then
         CARD_PORTS=$(cat "$PORTS_FILE")
     else
         CARD_PORTS="未设置"
     fi
-    
+
     HOSTNAME_INFO=$(hostname)
-    
+
     echo -e " 📛 ${GREEN}主机名:${RESET}    $HOSTNAME_INFO"
     if [ -f "$IP_FILE" ]; then
         if [ "$CARD_TYPE" = "6" ]; then
@@ -365,7 +366,7 @@ nat_info_card() {
     echo -e " 🔌 ${GREEN}端口范围:${RESET}  $CARD_PORTS"
     echo -e "${CYAN}----------------------------------------------------${RESET}"
     echo -e "${YELLOW} 常用端口占用检测:${RESET}"
-    
+
     for port in 22 80 443 8080; do
         if ss -tlnp 2>/dev/null | grep -q ":$port "; then
             PROC=$(ss -tlnp 2>/dev/null | grep ":$port " | head -1 | grep -oP 'users:\(\("\K[^"]+' | head -1)
@@ -374,7 +375,7 @@ nat_info_card() {
             echo -e "  端口 ${YELLOW}$port${RESET}: ${GREEN}空闲${RESET}"
         fi
     done
-    
+
     echo -e "${CYAN}====================================================${RESET}"
     pause
 }
@@ -560,7 +561,7 @@ while true; do
     echo -e "  ${GREEN}0.${RESET} 退出面板"
     echo -e "${CYAN}=========================================${RESET}"
     read -p "请输入你的选择: " choice
-    
+
     case "$choice" in
         1) show_sys_info ;;
         2) update_system ;;
@@ -578,3 +579,6 @@ while true; do
         *) echo -e "${RED}输入错误，请重新选择！${RESET}"; sleep 1 ;;
     esac
 done
+EOF
+
+chmod +x /usr/local/bin/n
